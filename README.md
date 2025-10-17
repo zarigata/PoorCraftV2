@@ -8,7 +8,19 @@ PoorCraft is an open-source Minecraft clone built from the ground up with modern
 
 ## 🌟 Features
 
+### Currently Implemented
 - **Cross-platform compatibility** (Windows, Linux, macOS)
+- **Window management** with multi-monitor support via GLFW
+- **Keyboard, mouse, and gamepad input** handling
+- **Fixed timestep game loop** with FPS limiting
+- **Event system** for engine-wide communication
+- **Resource management** with caching and async loading
+- **Memory management** utilities (tracking and pooling)
+- **Comprehensive logging** system with file output
+- **Configuration management** with INI file support
+- **Platform abstraction** layer for OS-specific operations
+
+### Planned Features
 - **Modern OpenGL rendering pipeline** with GLSL shaders
 - **Voxel-based world generation** with multiple biomes
 - **32x32 pixel art skin system** for character customization
@@ -40,8 +52,9 @@ PoorCraft is an open-source Minecraft clone built from the ground up with modern
 git clone https://github.com/yourusername/PoorCraft.git
 cd PoorCraft
 
-# Initialize submodules
+# Initialize submodules and setup dependencies
 git submodule update --init --recursive
+scripts\setup_dependencies.bat
 
 # Configure with CMake
 cmake -B build -G "Visual Studio 16 2019"
@@ -75,6 +88,7 @@ sudo apt install build-essential cmake git
 git clone https://github.com/yourusername/PoorCraft.git
 cd PoorCraft
 git submodule update --init --recursive
+./scripts/setup_dependencies.sh
 
 # Configure and build
 cmake -B build
@@ -116,6 +130,7 @@ brew install cmake
 git clone https://github.com/yourusername/PoorCraft.git
 cd PoorCraft
 git submodule update --init --recursive
+./scripts/setup_dependencies.sh
 
 # Configure and build
 cmake -B build -G "Unix Makefiles"
@@ -174,12 +189,12 @@ PoorCraft/
 
 PoorCraft uses the following third-party libraries:
 
-- **[GLFW](https://github.com/glfw/glfw)** - Window creation and input handling
-- **[GLAD](https://glad.dav1d.de/)** - OpenGL function loading
-- **[GLM](https://github.com/g-truc/glm)** - OpenGL Mathematics library
-- **[stb_image](https://github.com/nothings/stb)** - Image loading library
+- **[GLFW](https://github.com/glfw/glfw)** - Window creation and input handling (Git submodule)
+- **[GLAD](https://glad.dav1d.de/)** - OpenGL 4.6 Core function loading (generated)
+- **[GLM](https://github.com/g-truc/glm)** - OpenGL Mathematics library (Git submodule)
+- **[stb_image](https://github.com/nothings/stb)** - Image loading library (downloaded)
 
-All dependencies are included as Git submodules for easy setup.
+GLFW and GLM are included as Git submodules. GLAD files need to be generated from https://glad.dav1d.de/ with OpenGL 4.6 Core profile, and stb_image.h needs to be downloaded. Use the provided `setup_dependencies` scripts to automate this process.
 
 ## ⚙️ Configuration
 
@@ -216,6 +231,23 @@ max_fps=144
 ```
 
 ## 🛠️ Development
+
+### Current Status
+
+**Completed Systems:**
+- ✅ Core (Logger, Config, Platform)
+- ✅ Window (GLFW integration, multi-monitor support)
+- ✅ Input (Keyboard, mouse, gamepad)
+- ✅ Game Loop (Fixed timestep, FPS limiting)
+- ✅ Events (Pub/sub system, event types)
+- ✅ Resources (Loading, caching, async support)
+- ✅ Memory (Tracking, pooling)
+
+**Next Steps:**
+- 🔲 OpenGL rendering pipeline
+- 🔲 Shader system
+- 🔲 World/chunk system
+- 🔲 Terrain generation
 
 ### Building from Source
 

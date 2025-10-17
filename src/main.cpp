@@ -1,9 +1,17 @@
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/core/Config.h"
 #include "poorcraft/platform/Platform.h"
+#include "poorcraft/window/Window.h"
+#include "poorcraft/input/Input.h"
+#include "poorcraft/core/GameLoop.h"
+#include "poorcraft/core/EventBus.h"
+#include "poorcraft/resource/ResourceManager.h"
+#include "poorcraft/resource/BinaryResource.h"
+#include "poorcraft/events/WindowEvent.h"
 
 #include <iostream>
 #include <exception>
+#include <glad/glad.h>
 
 int main(int argc, char* argv[]) {
     try {
@@ -85,78 +93,126 @@ int main(int argc, char* argv[]) {
                 ", Timeout=" + std::to_string(config.get_int(poorcraft::Config::NetworkConfig::TIMEOUT_KEY)));
         PC_INFO("  Engine: Max FPS=" + std::to_string(config.get_int(poorcraft::Config::EngineConfig::MAX_FPS_KEY)));
 
-        // Test platform utilities
-        PC_INFO("=== Platform Information ===");
-        PC_INFO("System Info:");
-        PC_INFO(poorcraft::Platform::get_system_info());
-        PC_INFO("Home Directory: " + poorcraft::Platform::get_home_directory());
-        PC_INFO("Temp Directory: " + poorcraft::Platform::get_temp_directory());
-
-        // Test file operations
-        std::string test_file = poorcraft::Platform::create_temp_file_path("poorcraft_test", ".txt");
-        if (!test_file.empty()) {
-            PC_DEBUG("Created temp file path: " + test_file);
-
-            // Write test content
-            std::string test_content = "PoorCraft engine test file\nGenerated: " +
-                                     std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
-            poorcraft::Platform::FileOperationResult result =
-                poorcraft::Platform::write_file_text(test_file, test_content);
-
-            if (result == poorcraft::Platform::FileOperationResult::Success) {
-                PC_DEBUG("Successfully wrote test file");
-
-                // Read it back
-                std::string read_content;
-                result = poorcraft::Platform::read_file_text(test_file, read_content);
-
-                if (result == poorcraft::Platform::FileOperationResult::Success) {
-                    PC_DEBUG("Successfully read test file: " + read_content.substr(0, 50) + "...");
-                } else {
-                    PC_WARN("Failed to read test file");
-                }
-            } else {
-                PC_WARN("Failed to write test file");
-            }
-
-            // Clean up
-            poorcraft::Platform::delete_path(test_file);
+        // Initialize GLFW
+        PC_INFO("=== Initializing Window System ===");
+        if (!PoorCraft::Window::initializeGLFW()) {
+            PC_FATAL("Failed to initialize GLFW");
+            return 1;
         }
 
-        // Test directory operations
-        std::string test_dir = poorcraft::Platform::join_path(
-            poorcraft::Platform::get_temp_directory(), "poorcraft_test_dir");
-
-        poorcraft::Platform::FileOperationResult result =
-            poorcraft::Platform::create_directory(test_dir, true);
-
-        if (result == poorcraft::Platform::FileOperationResult::Success ||
-            result == poorcraft::Platform::FileOperationResult::AlreadyExists) {
-            PC_DEBUG("Successfully created test directory: " + test_dir);
-
-            // List directory contents
-            std::vector<std::string> entries;
-            result = poorcraft::Platform::list_directory(test_dir, entries);
-
-            if (result == poorcraft::Platform::FileOperationResult::Success) {
-                PC_DEBUG("Directory contents (" + std::to_string(entries.size()) + " entries)");
-            }
-
-            // Clean up
-            poorcraft::Platform::delete_path(test_dir, true);
-        } else {
-            PC_WARN("Failed to create test directory");
+        // Query and log available monitors
+        auto monitors = PoorCraft::Window::getMonitors();
+        PC_INFO("Detected " + std::to_string(monitors.size()) + " monitor(s)");
+        for (const auto& monitor : monitors) {
+            PC_INFO("  Monitor " + std::to_string(monitor.id) + ": " + monitor.name + 
+                    " (" + std::to_string(monitor.width) + "x" + std::to_string(monitor.height) + 
+                    " @ " + std::to_string(monitor.refreshRate) + "Hz)");
         }
 
-        PC_INFO("=== Core Systems Test Complete ===");
-        PC_INFO("All core systems (Logger, Config, Platform) initialized successfully!");
-        PC_INFO("PoorCraft engine foundation is ready for development.");
+        // Create window properties from config
+        PoorCraft::WindowProperties windowProps;
+        windowProps.title = "PoorCraft v0.1.0";
+        windowProps.width = config.get_int(poorcraft::Config::GraphicsConfig::WIDTH_KEY, 1280);
+        windowProps.height = config.get_int(poorcraft::Config::GraphicsConfig::HEIGHT_KEY, 720);
+        windowProps.fullscreen = config.get_bool(poorcraft::Config::GraphicsConfig::FULLSCREEN_KEY, false);
+        windowProps.vsync = config.get_bool(poorcraft::Config::GraphicsConfig::VSYNC_KEY, true);
 
-        // In a real engine, this would be the main game loop
-        // For now, we'll just exit successfully
+        // Create and initialize window
+        PoorCraft::Window window(windowProps);
+        if (!window.initialize()) {
+            PC_FATAL("Failed to initialize window");
+            PoorCraft::Window::terminateGLFW();
+            return 1;
+        }
+
+        // Set window event callback to forward events to EventBus
+        window.setEventCallback([](PoorCraft::Event& e) {
+            PoorCraft::EventBus::getInstance().publish(e);
+        });
+
+        // Forward all events to the input system
+        [[maybe_unused]] const size_t inputSubscription = PoorCraft::EventBus::getInstance().subscribe(
+            PoorCraft::EventType::None,
+            [](PoorCraft::Event& e) {
+                PoorCraft::Input::getInstance().onEvent(e);
+            });
+
+        // Subscribe to window close event
+        PoorCraft::EventBus::getInstance().subscribe(PoorCraft::EventType::WindowClose, 
+            [](PoorCraft::Event& e) {
+                PC_INFO("Window close requested by user");
+            });
+
+        // Initialize Input system
+        PC_INFO("=== Initializing Input System ===");
+        PoorCraft::Input::getInstance().setWindow(&window);
+
+        // Initialize ResourceManager
+        PC_INFO("=== Initializing Resource Manager ===");
+        std::string exePath = poorcraft::Platform::get_executable_directory();
+        PoorCraft::ResourceManager::getInstance().setBasePath(exePath);
+
+        // Create a test file for resource loading
+        std::string testResourcePath = poorcraft::Platform::join_path(exePath, "test_resource.dat");
+        std::string testContent = "PoorCraft Test Resource Data";
+        poorcraft::Platform::write_file_text(testResourcePath, testContent);
+
+        // Test resource loading
+        auto testResource = PoorCraft::ResourceManager::getInstance().load<PoorCraft::BinaryResource>("test_resource.dat");
+        if (testResource.isValid()) {
+            PC_INFO("Successfully loaded test resource (" + std::to_string(testResource->getSize()) + " bytes)");
+        }
+
+        // Create game loop
+        PC_INFO("=== Initializing Game Loop ===");
+        PoorCraft::GameLoop gameLoop(window);
+        
+        // Set fixed timestep (60 updates per second)
+        gameLoop.setFixedTimestep(1.0f / 60.0f);
+        
+        // Set max FPS from config
+        int maxFPS = config.get_int(poorcraft::Config::EngineConfig::MAX_FPS_KEY, 144);
+        gameLoop.setMaxFPS(maxFPS);
+
+        // Set update callback
+        gameLoop.setUpdateCallback([](float deltaTime) {
+            // Update game logic
+            auto& input = PoorCraft::Input::getInstance();
+            
+            // Test input - log when W key is pressed
+            if (input.wasKeyJustPressed(GLFW_KEY_W)) {
+                PC_DEBUG("W key pressed - Moving forward");
+            }
+            if (input.wasKeyJustPressed(GLFW_KEY_ESCAPE)) {
+                PC_INFO("Escape key pressed");
+            }
+        });
+
+        // Set render callback
+        gameLoop.setRenderCallback([]() {
+            // Clear screen with a nice color
+            glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        });
+
+        // Run the game loop
+        PC_INFO("=== Starting Game Loop ===");
+        PC_INFO("Press ESC or close the window to exit");
+        gameLoop.run();
+
+        // Cleanup
+        PC_INFO("=== Shutting Down ===");
+        window.shutdown();
+        PoorCraft::Window::terminateGLFW();
+        PoorCraft::ResourceManager::getInstance().clear();
+        PoorCraft::EventBus::getInstance().clear();
+
+        // Clean up test resource file
+        poorcraft::Platform::delete_path(testResourcePath);
 
         // Shutdown systems
         poorcraft::Config::get_instance().save_to_file();
+        PC_INFO("PoorCraft engine shutdown complete");
         poorcraft::Logger::get_instance().shutdown();
 
         return 0;

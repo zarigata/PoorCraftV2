@@ -7,6 +7,12 @@ This document provides comprehensive API reference for the core systems in the P
 - [Logger API](#logger-api)
 - [Config API](#config-api)
 - [Platform API](#platform-api)
+- [Window API](#window-api)
+- [Input API](#input-api)
+- [Game Loop API](#game-loop-api)
+- [Event System API](#event-system-api)
+- [Resource Management API](#resource-management-api)
+- [Memory Management API](#memory-management-api)
 
 ## Logger API
 
@@ -848,4 +854,607 @@ if (!poorcraft::Platform::is_absolute_path(config_path)) {
 - **No global state** modification in most functions
 - **Safe for concurrent use** across multiple threads
 
-This API reference covers the core systems available in the current version of PoorCraft. Additional systems will be documented as they are implemented.
+## Window API
+
+The Window system provides cross-platform window management with GLFW integration and OpenGL context creation.
+
+### WindowProperties Struct
+
+```cpp
+struct WindowProperties {
+    std::string title = "PoorCraft";
+    uint32_t width = 1280;
+    uint32_t height = 720;
+    bool fullscreen = false;
+    bool vsync = true;
+    int monitorIndex = -1; // -1 for primary monitor
+};
+```
+
+### Monitor Struct
+
+```cpp
+struct Monitor {
+    int id;
+    std::string name;
+    int x, y;           // Position
+    int width, height;  // Size
+    int refreshRate;
+    std::vector<VideoMode> videoModes;
+};
+```
+
+### Window Class
+
+```cpp
+class Window {
+public:
+    explicit Window(const WindowProperties& props);
+    
+    // Lifecycle
+    bool initialize();
+    void shutdown();
+    bool isOpen() const;
+    
+    // Event handling
+    void pollEvents();
+    void swapBuffers();
+    void setEventCallback(std::function<void(Event&)> callback);
+    
+    // Getters
+    uint32_t getWidth() const;
+    uint32_t getHeight() const;
+    const std::string& getTitle() const;
+    bool isFullscreen() const;
+    bool isVSync() const;
+    GLFWwindow* getNativeWindow() const;
+    
+    // Setters
+    void setTitle(const std::string& title);
+    void setSize(uint32_t width, uint32_t height);
+    void setFullscreen(bool fullscreen);
+    void setVSync(bool vsync);
+    void setPosition(int x, int y);
+    
+    // Static GLFW management
+    static bool initializeGLFW();
+    static void terminateGLFW();
+    static std::vector<Monitor> getMonitors();
+    static Monitor getPrimaryMonitor();
+};
+```
+
+**Example**:
+```cpp
+#include "poorcraft/window/Window.h"
+
+// Initialize GLFW
+if (!PoorCraft::Window::initializeGLFW()) {
+    return 1;
+}
+
+// Query monitors
+auto monitors = PoorCraft::Window::getMonitors();
+for (const auto& monitor : monitors) {
+    std::cout << monitor.name << ": " << monitor.width << "x" << monitor.height << std::endl;
+}
+
+// Create window
+PoorCraft::WindowProperties props;
+props.title = "My Game";
+props.width = 1920;
+props.height = 1080;
+props.vsync = true;
+
+PoorCraft::Window window(props);
+if (!window.initialize()) {
+    return 1;
+}
+
+// Set event callback
+window.setEventCallback([](PoorCraft::Event& e) {
+    // Handle events
+});
+
+// Main loop
+while (window.isOpen()) {
+    window.pollEvents();
+    // Render...
+    window.swapBuffers();
+}
+
+window.shutdown();
+PoorCraft::Window::terminateGLFW();
+```
+
+## Input API
+
+The Input system provides unified input state management for keyboard, mouse, and gamepad.
+
+### Input Class
+
+```cpp
+class Input {
+public:
+    static Input& getInstance();
+    
+    // Keyboard
+    bool isKeyPressed(int keyCode) const;
+    bool isKeyReleased(int keyCode) const;
+    bool isKeyHeld(int keyCode) const;
+    bool wasKeyJustPressed(int keyCode) const;
+    bool wasKeyJustReleased(int keyCode) const;
+    
+    // Mouse
+    bool isMouseButtonPressed(int button) const;
+    bool isMouseButtonReleased(int button) const;
+    bool wasMouseButtonJustPressed(int button) const;
+    bool wasMouseButtonJustReleased(int button) const;
+    Vec2 getMousePosition() const;
+    Vec2 getMouseDelta() const;
+    Vec2 getMouseScroll() const;
+    void setCursorMode(CursorMode mode);
+    
+    // Gamepad
+    bool isGamepadConnected(int gamepadId) const;
+    bool isGamepadButtonPressed(int gamepadId, int button) const;
+    float getGamepadAxis(int gamepadId, int axis) const;
+    std::string getGamepadName(int gamepadId) const;
+    
+    // System
+    void update();
+    void onEvent(Event& event);
+    void setWindow(Window* window);
+};
+```
+
+**Example**:
+```cpp
+#include "poorcraft/input/Input.h"
+
+// Initialize input system
+PoorCraft::Input::getInstance().setWindow(&window);
+
+// In game loop update callback
+auto& input = PoorCraft::Input::getInstance();
+
+// Keyboard input
+if (input.isKeyPressed(GLFW_KEY_W)) {
+    moveForward();
+}
+if (input.wasKeyJustPressed(GLFW_KEY_SPACE)) {
+    jump();
+}
+
+// Mouse input
+auto mousePos = input.getMousePosition();
+auto mouseDelta = input.getMouseDelta();
+rotateCamera(mouseDelta.x, mouseDelta.y);
+
+if (input.wasMouseButtonJustPressed(GLFW_MOUSE_BUTTON_LEFT)) {
+    placeBlock();
+}
+
+// Gamepad input
+if (input.isGamepadConnected(0)) {
+    float leftStickX = input.getGamepadAxis(0, 0);
+    float leftStickY = input.getGamepadAxis(0, 1);
+    movePlayer(leftStickX, leftStickY);
+}
+```
+
+## Game Loop API
+
+The GameLoop system manages the main game loop with fixed timestep updates and variable rendering.
+
+### GameLoop Class
+
+```cpp
+class GameLoop {
+public:
+    using UpdateCallback = std::function<void(float)>;
+    using RenderCallback = std::function<void()>;
+    
+    explicit GameLoop(Window& window);
+    
+    // Main loop control
+    void run();
+    void stop();
+    
+    // Callbacks
+    void setUpdateCallback(UpdateCallback callback);
+    void setRenderCallback(RenderCallback callback);
+    
+    // Timing configuration
+    void setFixedTimestep(float timestep);
+    void setMaxFPS(int maxFPS);
+    
+    // Getters
+    float getFPS() const;
+    float getFrameTime() const;
+    float getUpdateTime() const;
+    float getRenderTime() const;
+    bool isRunning() const;
+};
+```
+
+**Example**:
+```cpp
+#include "poorcraft/core/GameLoop.h"
+
+PoorCraft::GameLoop gameLoop(window);
+
+// Set fixed timestep (60 updates per second)
+gameLoop.setFixedTimestep(1.0f / 60.0f);
+
+// Set max FPS (144 FPS cap)
+gameLoop.setMaxFPS(144);
+
+// Set update callback
+gameLoop.setUpdateCallback([](float deltaTime) {
+    // Update game logic with fixed timestep
+    updatePhysics(deltaTime);
+    updateEntities(deltaTime);
+});
+
+// Set render callback
+gameLoop.setRenderCallback([]() {
+    // Render scene
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    renderWorld();
+    renderEntities();
+});
+
+// Run the game loop
+gameLoop.run();
+
+// Query performance metrics
+float fps = gameLoop.getFPS();
+float frameTime = gameLoop.getFrameTime();
+```
+
+## Event System API
+
+The Event system provides engine-wide event communication using the observer pattern.
+
+### Event Base Class
+
+```cpp
+enum class EventType {
+    None = 0,
+    WindowClose, WindowResize, WindowFocus, WindowMinimize, WindowMove,
+    KeyPress, KeyRelease,
+    MouseMove, MouseButtonPress, MouseButtonRelease, MouseScroll,
+    GamepadButton, GamepadAxis
+};
+
+enum EventCategory {
+    None = 0,
+    EventCategoryWindow = 1 << 0,
+    EventCategoryInput = 1 << 1,
+    EventCategoryKeyboard = 1 << 2,
+    EventCategoryMouse = 1 << 3,
+    EventCategoryGamepad = 1 << 4
+};
+
+class Event {
+public:
+    virtual EventType getType() const = 0;
+    virtual const char* getName() const = 0;
+    virtual int getCategoryFlags() const = 0;
+    virtual std::string toString() const;
+    
+    bool isInCategory(EventCategory category) const;
+    bool isHandled() const;
+    void setHandled(bool handled = true);
+};
+```
+
+### EventBus Class
+
+```cpp
+class EventBus {
+public:
+    static EventBus& getInstance();
+    
+    // Subscribe to specific event type, returns subscription ID
+    size_t subscribe(EventType type, EventListener listener);
+    
+    // Unsubscribe using subscription ID
+    void unsubscribe(size_t subscriptionId);
+    
+    // Publish event immediately to all listeners
+    void publish(Event& event);
+    
+    // Queue event for deferred processing
+    void queueEvent(std::unique_ptr<Event> event);
+    
+    // Process all queued events
+    void processEvents();
+    
+    // Clear all subscriptions and queued events
+    void clear();
+};
+```
+
+### Event Classes
+
+```cpp
+// Window events
+class WindowCloseEvent : public Event;
+class WindowResizeEvent : public Event;
+class WindowFocusEvent : public Event;
+class WindowMinimizeEvent : public Event;
+class WindowMoveEvent : public Event;
+
+// Input events
+class KeyPressEvent : public Event;
+class KeyReleaseEvent : public Event;
+class MouseMoveEvent : public Event;
+class MouseButtonPressEvent : public Event;
+class MouseButtonReleaseEvent : public Event;
+class MouseScrollEvent : public Event;
+class GamepadButtonEvent : public Event;
+class GamepadAxisEvent : public Event;
+```
+
+**Example**:
+```cpp
+#include "poorcraft/core/EventBus.h"
+#include "poorcraft/events/WindowEvent.h"
+
+// Subscribe to window close event
+auto subId = PoorCraft::EventBus::getInstance().subscribe(
+    PoorCraft::EventType::WindowClose,
+    [](PoorCraft::Event& e) {
+        std::cout << "Window closing!" << std::endl;
+        // Save game, cleanup, etc.
+    }
+);
+
+// Subscribe to window resize
+PoorCraft::EventBus::getInstance().subscribe(
+    PoorCraft::EventType::WindowResize,
+    [](PoorCraft::Event& e) {
+        auto& resizeEvent = static_cast<PoorCraft::WindowResizeEvent&>(e);
+        std::cout << "Window resized: " << resizeEvent.getWidth() 
+                  << "x" << resizeEvent.getHeight() << std::endl;
+        updateViewport(resizeEvent.getWidth(), resizeEvent.getHeight());
+    }
+);
+
+// Queue an event for later processing
+auto event = std::make_unique<PoorCraft::KeyPressEvent>(GLFW_KEY_ESCAPE, false);
+PoorCraft::EventBus::getInstance().queueEvent(std::move(event));
+
+// Process queued events (typically called once per frame)
+PoorCraft::EventBus::getInstance().processEvents();
+
+// Unsubscribe
+PoorCraft::EventBus::getInstance().unsubscribe(subId);
+```
+
+## Resource Management API
+
+The Resource Management system provides centralized resource loading, caching, and lifetime management.
+
+### Resource Base Class
+
+```cpp
+enum class ResourceType {
+    Unknown, Texture, Shader, Model, Sound, Font, Config, Binary
+};
+
+enum class ResourceState {
+    Unloaded, Loading, Loaded, Failed
+};
+
+class Resource {
+public:
+    virtual bool load() = 0;
+    virtual void unload() = 0;
+    virtual ResourceType getType() const = 0;
+    
+    ResourceState getState() const;
+    const std::string& getPath() const;
+    size_t getSize() const;
+};
+```
+
+### ResourceManager Class
+
+```cpp
+class ResourceManager {
+public:
+    static ResourceManager& getInstance();
+    
+    // Load resource (checks cache first)
+    template<typename T>
+    ResourceHandle<T> load(const std::string& path, const ResourceLoadParams& params = {});
+    
+    // Unload resource from cache
+    void unload(const std::string& path);
+    
+    // Reload resource (force reload even if cached)
+    template<typename T>
+    ResourceHandle<T> reload(const std::string& path);
+    
+    // Get cached resource without loading
+    template<typename T>
+    ResourceHandle<T> get(const std::string& path);
+    
+    // Check if resource exists in cache
+    bool exists(const std::string& path) const;
+    
+    // Clear all resources
+    void clear();
+    
+    // Memory usage
+    size_t getMemoryUsage() const;
+    
+    // Path management
+    void setBasePath(const std::string& path);
+    std::string resolvePath(const std::string& relativePath) const;
+    
+    // Async loading
+    template<typename T>
+    std::future<ResourceHandle<T>> loadAsync(const std::string& path, 
+        std::function<void(ResourceHandle<T>)> callback = nullptr);
+};
+```
+
+### ResourceHandle Template
+
+```cpp
+template<typename T>
+class ResourceHandle {
+public:
+    T* get() const;
+    T* operator->() const;
+    T& operator*() const;
+    bool isValid() const;
+    explicit operator bool() const;
+};
+```
+
+### BinaryResource Class
+
+```cpp
+class BinaryResource : public Resource {
+public:
+    bool load() override;
+    void unload() override;
+    ResourceType getType() const override;
+    
+    const std::vector<uint8_t>& getData() const;
+    const uint8_t* getDataPtr() const;
+};
+```
+
+**Example**:
+```cpp
+#include "poorcraft/resource/ResourceManager.h"
+#include "poorcraft/resource/BinaryResource.h"
+
+// Set base path for resources
+PoorCraft::ResourceManager::getInstance().setBasePath("assets/");
+
+// Load a binary resource
+auto resource = PoorCraft::ResourceManager::getInstance()
+    .load<PoorCraft::BinaryResource>("data/config.dat");
+
+if (resource.isValid()) {
+    const auto& data = resource->getData();
+    std::cout << "Loaded " << data.size() << " bytes" << std::endl;
+}
+
+// Async loading
+auto future = PoorCraft::ResourceManager::getInstance()
+    .loadAsync<PoorCraft::BinaryResource>("data/large_file.dat",
+        [](auto handle) {
+            if (handle.isValid()) {
+                std::cout << "Async load complete!" << std::endl;
+            }
+        });
+
+// Query memory usage
+size_t memoryUsage = PoorCraft::ResourceManager::getInstance().getMemoryUsage();
+std::cout << "Resource memory: " << memoryUsage / 1024 << " KB" << std::endl;
+
+// Clear all resources
+PoorCraft::ResourceManager::getInstance().clear();
+```
+
+## Memory Management API
+
+The Memory Management system provides allocation tracking and object pooling for performance.
+
+### MemoryTracker Class
+
+```cpp
+class MemoryTracker {
+public:
+    static MemoryTracker& getInstance();
+    
+    // Record allocations
+    void recordAllocation(void* ptr, size_t size, const char* file, int line);
+    void recordDeallocation(void* ptr);
+    
+    // Statistics
+    size_t getTotalAllocated() const;
+    size_t getAllocationCount() const;
+    size_t getPeakMemoryUsage() const;
+    
+    // Debugging
+    void dumpAllocations() const;
+    void reset();
+};
+```
+
+### PoolAllocator Class
+
+```cpp
+class PoolAllocator {
+public:
+    PoolAllocator(size_t elementSize, size_t capacity);
+    
+    // Allocation
+    void* allocate();
+    void deallocate(void* ptr);
+    void reset();
+    
+    // Getters
+    size_t getElementSize() const;
+    size_t getCapacity() const;
+    size_t getUsedCount() const;
+    size_t getFreeCount() const;
+};
+
+// Template version for type-safe allocation
+template<typename T>
+class TypedPoolAllocator {
+public:
+    explicit TypedPoolAllocator(size_t capacity);
+    
+    template<typename... Args>
+    T* construct(Args&&... args);
+    
+    void destroy(T* ptr);
+    void reset();
+};
+```
+
+**Example**:
+```cpp
+#include "poorcraft/memory/MemoryTracker.h"
+#include "poorcraft/memory/PoolAllocator.h"
+
+// Memory tracking
+auto& tracker = PoorCraft::MemoryTracker::getInstance();
+tracker.recordAllocation(ptr, size, __FILE__, __LINE__);
+// ... later ...
+tracker.recordDeallocation(ptr);
+
+// Query statistics
+std::cout << "Total allocated: " << tracker.getTotalAllocated() << " bytes" << std::endl;
+std::cout << "Peak usage: " << tracker.getPeakMemoryUsage() << " bytes" << std::endl;
+
+// Dump all active allocations (for leak detection)
+tracker.dumpAllocations();
+
+// Object pooling
+PoorCraft::TypedPoolAllocator<MyEntity> entityPool(1000);
+
+// Allocate from pool
+MyEntity* entity = entityPool.construct(arg1, arg2);
+
+// Use entity...
+
+// Return to pool
+entityPool.destroy(entity);
+
+// Reset pool (returns all objects to free list)
+entityPool.reset();
+```
+
+This API reference covers all core systems available in the current version of PoorCraft. Additional systems will be documented as they are implemented.

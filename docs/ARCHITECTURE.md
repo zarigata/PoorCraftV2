@@ -97,6 +97,104 @@ The engine is designed with clear module boundaries:
 - **Callbacks**: Notification system for configuration changes
 - **Defaults**: Sensible default values for all settings
 
+#### Window System
+**Purpose**: Cross-platform window management and OpenGL context creation
+
+**Components**:
+- `Window` class wrapping GLFW
+- `WindowProperties` for configuration
+- `Monitor` struct for multi-monitor support
+- Event callback system
+
+**Key Features**:
+- **GLFW integration**: Cross-platform window creation
+- **OpenGL 4.6 Core**: Modern rendering context
+- **Multi-monitor**: Query and select display devices
+- **Event forwarding**: Window events to EventBus
+- **VSync control**: Frame rate synchronization
+- **Fullscreen support**: Windowed and fullscreen modes
+
+#### Input System
+**Purpose**: Unified input state management for keyboard, mouse, and gamepad
+
+**Components**:
+- `Input` singleton class
+- State tracking arrays for all input devices
+- Event-driven updates from Window callbacks
+- Query interface for game logic
+
+**Key Features**:
+- **Keyboard**: Key press/release/hold detection, just-pressed/released flags
+- **Mouse**: Position, delta, scroll, button states, cursor modes
+- **Gamepad**: Up to 16 controllers, button and axis support
+- **Frame-based updates**: Clear transient states each frame
+- **Thread-safe**: Singleton pattern with safe access
+
+#### Game Loop
+**Purpose**: Fixed timestep game loop with variable rendering
+
+**Components**:
+- `GameLoop` class managing main loop
+- Update and render callbacks
+- Fixed timestep accumulator
+- FPS limiting and measurement
+
+**Key Features**:
+- **Fixed timestep**: Consistent physics updates (default 60Hz)
+- **Variable rendering**: Render as fast as possible or capped
+- **Spiral prevention**: Max update iterations to avoid death spiral
+- **Performance metrics**: FPS, frame time, update/render time tracking
+- **Integration**: Polls events, updates Input, processes EventBus
+
+#### Event System
+**Purpose**: Engine-wide event communication using observer pattern
+
+**Components**:
+- `Event` base class with type and category system
+- `EventBus` singleton for pub/sub messaging
+- `EventDispatcher` for type-safe event handling
+- Concrete event classes (WindowEvent, InputEvent)
+
+**Key Features**:
+- **Type hierarchy**: Base Event class with derived types
+- **Categories**: Filter events by category flags
+- **Pub/Sub**: Subscribe to specific event types or all events
+- **Queued events**: Deferred processing for next frame
+- **Thread-safe**: Mutex-protected subscription and publishing
+- **Handled flag**: Prevent further processing once consumed
+
+#### Resource Management
+**Purpose**: Centralized resource loading, caching, and lifetime management
+
+**Components**:
+- `Resource` abstract base class
+- `ResourceManager` singleton for caching
+- `ResourceHandle` for type-safe access
+- Concrete resource types (BinaryResource, etc.)
+
+**Key Features**:
+- **Caching**: Automatic cache management with path-based lookup
+- **Type-safe handles**: Smart pointer-based resource access
+- **Async loading**: Background loading with callbacks
+- **Memory tracking**: Query total memory usage
+- **Path resolution**: Base path + relative path system
+- **Factory pattern**: Register custom resource types
+
+#### Memory Management
+**Purpose**: Memory allocation tracking and pooling for performance
+
+**Components**:
+- `MemoryTracker` for allocation diagnostics
+- `PoolAllocator` for fixed-size object pooling
+- `TypedPoolAllocator` template for type-safe pools
+
+**Key Features**:
+- **Allocation tracking**: Record all allocations with source location
+- **Peak usage**: Track maximum memory usage
+- **Leak detection**: Dump active allocations on shutdown
+- **Object pooling**: Efficient allocation for frequently created objects
+- **Thread-safe**: Mutex-protected operations
+
 ### Platform Abstraction
 
 #### Platform Utilities
@@ -200,22 +298,54 @@ The engine is designed with clear module boundaries:
 2. **Logger initialization** with configuration-based log level
 3. **Platform detection** and system information gathering
 4. **Configuration loading** from `config.ini` file
-5. **Core systems verification** with comprehensive testing
-6. **Engine ready** for game logic implementation
+5. **GLFW initialization** for window management
+6. **Window creation** with OpenGL 4.6 Core context
+7. **GLAD loading** of OpenGL function pointers
+8. **Input system initialization** linked to window
+9. **EventBus setup** with event forwarding from window
+10. **ResourceManager initialization** with base path
+11. **GameLoop creation** with update/render callbacks
+12. **Main loop execution** until window closes
+13. **Cleanup and shutdown** of all systems
+
+## System Dependencies
+
+```
+Main
+ ├─> Logger (independent)
+ ├─> Config (independent)
+ ├─> Platform (independent)
+ ├─> GLFW (external)
+ ├─> Window
+ │    ├─> GLFW
+ │    ├─> GLAD
+ │    └─> Event
+ ├─> EventBus
+ │    └─> Event
+ ├─> Input
+ │    ├─> Window
+ │    └─> Event
+ ├─> ResourceManager
+ │    ├─> Platform
+ │    └─> Resource
+ └─> GameLoop
+      ├─> Window
+      ├─> Input
+      └─> EventBus
+```
 
 ## Future Systems
 
 The current architecture provides a solid foundation for additional systems:
 
 ### Planned Systems
-- **Rendering Engine**: OpenGL-based rendering pipeline
-- **World System**: Voxel world generation and management
-- **Entity System**: Entity-component architecture
+- **Rendering Engine**: OpenGL-based rendering pipeline with shaders
+- **World System**: Voxel world generation and chunk management
+- **Entity System**: Entity-component architecture for game objects
 - **Networking**: Multiplayer server and client
-- **Audio System**: 3D spatial audio
-- **Input System**: Unified input handling
-- **Resource Management**: Asset loading and caching
-- **Scripting**: Lua or similar for modding
+- **Audio System**: 3D spatial audio with OpenAL
+- **Scripting**: Lua or similar for modding support
+- **Physics**: Collision detection and response
 
 ### Extension Points
 - **Plugin architecture** for third-party modules

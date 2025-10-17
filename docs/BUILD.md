@@ -21,6 +21,12 @@ This document provides comprehensive build instructions for the PoorCraft game e
 
 ## Dependency Setup
 
+### Prerequisites
+
+Before building, ensure you have:
+- **OpenGL 4.6 compatible GPU and drivers** (required for rendering)
+- **Git** for cloning repositories and managing submodules
+
 ### Using Git Submodules (Recommended)
 
 ```bash
@@ -32,14 +38,47 @@ cd PoorCraft
 git submodule update --init --recursive
 ```
 
+### Setting Up Dependencies
+
+PoorCraft requires GLFW, GLM, GLAD, and stb_image. You can set these up automatically using the provided scripts:
+
+**Linux/macOS:**
+```bash
+./scripts/setup_dependencies.sh
+```
+
+**Windows:**
+```cmd
+scripts\setup_dependencies.bat
+```
+
 ### Manual Dependency Setup (Alternative)
 
-If you prefer not to use submodules:
+If you prefer not to use the setup scripts:
 
-1. **GLFW**: Download from https://github.com/glfw/glfw/releases
-2. **GLM**: Download from https://github.com/g-truc/glm/releases
-3. **GLAD**: Generate from https://glad.dav1d.de/ with OpenGL 4.6 Core
+1. **GLFW**: Initialize as Git submodule (already in `libs/glfw/`)
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+2. **GLM**: Initialize as Git submodule (already in `libs/glm/`)
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+3. **GLAD**: Generate from https://glad.dav1d.de/ with the following settings:
+   - Language: C/C++
+   - Specification: OpenGL
+   - API gl: Version 4.6
+   - Profile: Core
+   - Options: Generate a loader
+   - Place generated files in:
+     - `libs/glad/include/glad/glad.h`
+     - `libs/glad/include/KHR/khrplatform.h`
+     - `libs/glad/src/glad.c`
+
 4. **stb_image**: Download `stb_image.h` from https://github.com/nothings/stb
+   - Place in `libs/stb/stb_image.h`
 
 ## Platform-Specific Setup
 
@@ -340,6 +379,18 @@ cmake -B build -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON
 
 #### "Configuration file not found"
 **Solution**: The engine creates a default `config.ini` file on first run.
+
+#### "GLFW initialization failed"
+**Solution**:
+- Ensure GLFW submodule is initialized: `git submodule update --init --recursive`
+- Check that GLFW was built correctly
+- On Linux, install required X11 development libraries
+
+#### "GLAD files missing"
+**Solution**:
+- Generate GLAD files from https://glad.dav1d.de/ with OpenGL 4.6 Core profile
+- Place files in `libs/glad/include/` and `libs/glad/src/`
+- Or run the setup_dependencies script
 
 ## Continuous Integration
 

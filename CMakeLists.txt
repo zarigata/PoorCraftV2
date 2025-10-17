@@ -60,6 +60,15 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 add_subdirectory(libs)
 add_subdirectory(src)
 
+target_sources(PoorCraft PRIVATE
+    ${PROJECT_SOURCE_DIR}/libs/glad/src/glad.c
+)
+
+target_include_directories(PoorCraft PRIVATE
+    ${PROJECT_SOURCE_DIR}/libs/glad/include
+    ${PROJECT_SOURCE_DIR}/libs/stb
+)
+
 # Assets and shaders directories (for organization)
 # add_subdirectory(shaders)
 # add_subdirectory(assets)
