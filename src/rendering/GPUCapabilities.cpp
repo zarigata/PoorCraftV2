@@ -1,0 +1,249 @@
+#include "poorcraft/rendering/GPUCapabilities.h"
+
+#include <algorithm>
+#include <cctype>
+#include <sstream>
+
+#include <glad/glad.h>
+
+#include "poorcraft/core/Logger.h"
+
+namespace PoorCraft {
+
+namespace {
+GPUVendor detectVendor(const std::string& renderer) {
+    std::string lowerRenderer;
+    lowerRenderer.reserve(renderer.size());
+    std::transform(renderer.begin(), renderer.end(), std::back_inserter(lowerRenderer), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (lowerRenderer.find("nvidia") != std::string::npos || lowerRenderer.find("geforce") != std::string::npos) {
+        return GPUVendor::NVIDIA;
+    }
+    if (lowerRenderer.find("amd") != std::string::npos || lowerRenderer.find("radeon") != std::string::npos) {
+        return GPUVendor::AMD;
+    }
+    if (lowerRenderer.find("intel") != std::string::npos) {
+        return GPUVendor::INTEL;
+    }
+    return GPUVendor::UNKNOWN;
+}
+
+void parseVersion(const std::string& versionStr, int& major, int& minor) {
+    major = 0;
+    minor = 0;
+    std::istringstream iss(versionStr);
+    iss >> major;
+    if (iss.peek() == '.') {
+        iss.ignore();
+        iss >> minor;
+    }
+}
+
+bool hasExtension(const std::set<std::string>& extensions, const std::string& name) {
+    return extensions.find(name) != extensions.end();
+}
+
+} // namespace
+
+GPUCapabilities& GPUCapabilities::getInstance() {
+    static GPUCapabilities instance;
+    return instance;
+}
+
+bool GPUCapabilities::query() {
+    m_Extensions.clear();
+
+    const GLubyte* vendorStr = glGetString(GL_VENDOR);
+    const GLubyte* rendererStr = glGetString(GL_RENDERER);
+    const GLubyte* versionStr = glGetString(GL_VERSION);
+    const GLubyte* glslStr = glGetString(GL_SHADING_LANGUAGE_VERSION);
+
+    if (!vendorStr || !rendererStr || !versionStr) {
+        PC_ERROR("Failed to query GPU capabilities: OpenGL context not initialized");
+        return false;
+    }
+
+    m_Data.vendorString = reinterpret_cast<const char*>(vendorStr);
+    m_Data.rendererString = reinterpret_cast<const char*>(rendererStr);
+    m_Data.versionString = reinterpret_cast<const char*>(versionStr);
+    m_Data.glslVersionString = glslStr ? reinterpret_cast<const char*>(glslStr) : "";
+    m_Data.vendor = detectVendor(m_Data.rendererString);
+
+    parseVersion(m_Data.versionString, m_Data.glVersionMajor, m_Data.glVersionMinor);
+    parseVersion(m_Data.glslVersionString, m_Data.glslVersionMajor, m_Data.glslVersionMinor);
+
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &m_Data.maxTextureSize);
+    glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &m_Data.maxTextureUnits);
+    glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &m_Data.maxVertexAttributes);
+    glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &m_Data.maxUniformBufferBindings);
+    glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &m_Data.maxColorAttachments);
+    glGetIntegerv(GL_MAX_SAMPLES, &m_Data.maxSamples);
+
+    if (GLAD_GL_EXT_texture_filter_anisotropic) {
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &m_Data.maxAnisotropy);
+    } else {
+        m_Data.maxAnisotropy = 1.0f;
+    }
+
+    GLint extensionCount = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+    for (GLint i = 0; i < extensionCount; ++i) {
+        const char* extensionName = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
+        if (extensionName) {
+            m_Extensions.insert(extensionName);
+        }
+    }
+
+    m_Data.supportsComputeShaders = (m_Data.glVersionMajor > 4) || (m_Data.glVersionMajor == 4 && m_Data.glVersionMinor >= 3) || hasExtension(m_Extensions, "GL_ARB_compute_shader");
+    m_Data.supportsGeometryShaders = (m_Data.glVersionMajor > 3) || (m_Data.glVersionMajor == 3 && m_Data.glVersionMinor >= 2) || hasExtension(m_Extensions, "GL_EXT_geometry_shader4");
+    m_Data.supportsTessellationShaders = (m_Data.glVersionMajor > 4) || (m_Data.glVersionMajor == 4 && m_Data.glVersionMinor >= 0) || hasExtension(m_Extensions, "GL_ARB_tessellation_shader");
+    m_Data.supportsBindlessTextures = hasExtension(m_Extensions, "GL_NV_bindless_texture") || hasExtension(m_Extensions, "GL_ARB_bindless_texture");
+    m_Data.supportsMultiDrawIndirect = (m_Data.glVersionMajor > 4) || (m_Data.glVersionMajor == 4 && m_Data.glVersionMinor >= 3) || hasExtension(m_Extensions, "GL_ARB_multi_draw_indirect");
+    m_Data.supportsDebugOutput = hasExtension(m_Extensions, "GL_KHR_debug");
+
+    queryVRAM();
+
+    printCapabilities();
+
+    return true;
+}
+
+const GPUCapabilitiesData& GPUCapabilities::getCapabilities() const {
+    return m_Data;
+}
+
+GPUVendor GPUCapabilities::getVendor() const {
+    return m_Data.vendor;
+}
+
+const std::string& GPUCapabilities::getVendorString() const {
+    return m_Data.vendorString;
+}
+
+const std::string& GPUCapabilities::getRendererString() const {
+    return m_Data.rendererString;
+}
+
+const std::string& GPUCapabilities::getVersionString() const {
+    return m_Data.versionString;
+}
+
+const std::string& GPUCapabilities::getGLSLVersionString() const {
+    return m_Data.glslVersionString;
+}
+
+int GPUCapabilities::getMaxTextureSize() const {
+    return m_Data.maxTextureSize;
+}
+
+int GPUCapabilities::getMaxTextureUnits() const {
+    return m_Data.maxTextureUnits;
+}
+
+int GPUCapabilities::getMaxVertexAttributes() const {
+    return m_Data.maxVertexAttributes;
+}
+
+int GPUCapabilities::getMaxUniformBufferBindings() const {
+    return m_Data.maxUniformBufferBindings;
+}
+
+int GPUCapabilities::getMaxColorAttachments() const {
+    return m_Data.maxColorAttachments;
+}
+
+int GPUCapabilities::getMaxSamples() const {
+    return m_Data.maxSamples;
+}
+
+float GPUCapabilities::getMaxAnisotropy() const {
+    return m_Data.maxAnisotropy;
+}
+
+bool GPUCapabilities::supportsExtension(const std::string& name) const {
+    return hasExtension(m_Extensions, name);
+}
+
+bool GPUCapabilities::supportsCompute() const {
+    return m_Data.supportsComputeShaders;
+}
+
+bool GPUCapabilities::supportsGeometry() const {
+    return m_Data.supportsGeometryShaders;
+}
+
+bool GPUCapabilities::supportsTessellation() const {
+    return m_Data.supportsTessellationShaders;
+}
+
+bool GPUCapabilities::supportsMultiDrawIndirectRendering() const {
+    return m_Data.supportsMultiDrawIndirect;
+}
+
+bool GPUCapabilities::supportsDebugOutputMessages() const {
+    return m_Data.supportsDebugOutput;
+}
+
+std::size_t GPUCapabilities::getTotalVRAMMB() const {
+    return m_Data.totalVRAMMB;
+}
+
+std::size_t GPUCapabilities::getAvailableVRAMMB() const {
+    return m_Data.availableVRAMMB;
+}
+
+bool GPUCapabilities::isVendor(GPUVendor vendor) const {
+    return m_Data.vendor == vendor;
+}
+
+bool GPUCapabilities::requiresWorkaround(const std::string& issueKey) const {
+    if (issueKey == "intel_depth_clip") {
+        return m_Data.vendor == GPUVendor::INTEL && m_Data.glVersionMajor < 4;
+    }
+    return false;
+}
+
+void GPUCapabilities::printCapabilities() const {
+    PC_INFO("=== GPU Capabilities ===");
+    PC_INFOF("Vendor: %s", m_Data.vendorString.c_str());
+    PC_INFOF("Renderer: %s", m_Data.rendererString.c_str());
+    PC_INFOF("OpenGL Version: %s", m_Data.versionString.c_str());
+    PC_INFOF("GLSL Version: %s", m_Data.glslVersionString.c_str());
+    PC_INFOF("Max Texture Size: %d", m_Data.maxTextureSize);
+    PC_INFOF("Max Texture Units: %d", m_Data.maxTextureUnits);
+    PC_INFOF("Max Vertex Attributes: %d", m_Data.maxVertexAttributes);
+    PC_INFOF("Max Uniform Buffer Bindings: %d", m_Data.maxUniformBufferBindings);
+    PC_INFOF("Max Color Attachments: %d", m_Data.maxColorAttachments);
+    PC_INFOF("Max Samples: %d", m_Data.maxSamples);
+    PC_INFOF("Max Anisotropy: %.2f", m_Data.maxAnisotropy);
+    PC_INFOF("Total VRAM: %zu MB", m_Data.totalVRAMMB);
+    PC_INFOF("Available VRAM: %zu MB", m_Data.availableVRAMMB);
+    PC_INFO("========================");
+}
+
+GPUVendor GPUCapabilities::parseVendor(const std::string& renderer) const {
+    return detectVendor(renderer);
+}
+
+void GPUCapabilities::queryVRAM() {
+    m_Data.totalVRAMMB = 0;
+    m_Data.availableVRAMMB = 0;
+
+    if (hasExtension(m_Extensions, "GL_NVX_gpu_memory_info")) {
+        GLint totalMemoryKB = 0;
+        GLint availableMemoryKB = 0;
+        glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, &totalMemoryKB);
+        glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, &availableMemoryKB);
+        m_Data.totalVRAMMB = static_cast<std::size_t>(totalMemoryKB) / 1024;
+        m_Data.availableVRAMMB = static_cast<std::size_t>(availableMemoryKB) / 1024;
+    } else if (hasExtension(m_Extensions, "GL_ATI_meminfo")) {
+        GLint vboMemory[4] = {0};
+        glGetIntegerv(GL_VBO_FREE_MEMORY_ATI, vboMemory);
+        m_Data.totalVRAMMB = static_cast<std::size_t>(vboMemory[0]) / 1024;
+        m_Data.availableVRAMMB = static_cast<std::size_t>(vboMemory[1]) / 1024;
+    }
+}
+
+} // namespace PoorCraft

@@ -73,6 +73,8 @@ public:
 
     explicit operator bool() const { return isValid(); }
 
+    std::shared_ptr<T> getSharedPtr() const { return m_Resource; }
+
 private:
     std::shared_ptr<T> m_Resource;
 };
