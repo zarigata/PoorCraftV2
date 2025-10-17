@@ -1,0 +1,11 @@
+# .gitmodules - Git submodules configuration for PoorCraft dependencies
+
+[submodule "libs/glfw"]
+    path = libs/glfw
+    url = https://github.com/glfw/glfw.git
+    branch = master
+
+[submodule "libs/glm"]
+    path = libs/glm
+    url = https://github.com/g-truc/glm.git
+    branch = master

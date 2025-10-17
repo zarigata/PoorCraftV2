@@ -1,0 +1,67 @@
+---
+# .clang-format - Code formatting configuration for PoorCraft
+# Based on LLVM style with customizations for C++17
+
+Language: Cpp
+BasedOnStyle: LLVM
+
+# Basic formatting
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 120
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+
+# Namespace formatting
+NamespaceIndentation: None
+
+# Access modifiers
+AccessModifierOffset: -4
+
+# Function formatting
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# Include sorting
+SortIncludes: true
+
+# Line endings
+InsertTrailingCommas: None
+
+# Spaces
+SpacesBeforeTrailingComments: 2
+SpaceBeforeParens: ControlStatements
+SpaceBeforeAssignmentOperators: true
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceAfterCtorInitializerColon: true
+
+# Pointers and references
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# Braces
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+
+# Comments
+CommentPragmas: '^ IWYU pragma:'
+
+# C++11 features
+Standard: c++17
+
+# File extensions
+...
