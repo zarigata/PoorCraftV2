@@ -55,6 +55,8 @@ public:
                   const glm::vec4& color,
                   Shader& shader);
 
+    void setCamera(const Camera* camera);
+
     const RenderStats& getStats() const;
     void resetStats();
 
@@ -83,6 +85,8 @@ private:
     std::shared_ptr<VertexArray> m_CubeVAO;
     std::shared_ptr<VertexArray> m_LineVAO;
     std::size_t m_LineVBOIndex = static_cast<std::size_t>(-1);
+
+    const Camera* m_ActiveCamera = nullptr;
 };
 
 } // namespace PoorCraft
