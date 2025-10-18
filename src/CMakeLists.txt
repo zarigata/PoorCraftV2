@@ -37,6 +37,7 @@ target_include_directories(PoorCraft
         ${PROJECT_SOURCE_DIR}/libs/glad/include
         ${PROJECT_SOURCE_DIR}/libs/glm
         ${PROJECT_SOURCE_DIR}/libs/stb
+        ${PROJECT_SOURCE_DIR}/libs/FastNoiseLite
 )
 
 # Platform-specific linking
