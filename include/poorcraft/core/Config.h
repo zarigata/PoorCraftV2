@@ -287,6 +287,41 @@ public:
         static constexpr const char* MAX_FPS = "max_fps";
     };
 
+    struct PhysicsConfig {
+        static constexpr const char* SECTION = "Physics";
+        static constexpr const char* WALK_SPEED_KEY = "Physics.walk_speed";
+        static constexpr const char* SPRINT_SPEED_KEY = "Physics.sprint_speed";
+        static constexpr const char* FLY_SPEED_KEY = "Physics.fly_speed";
+        static constexpr const char* SWIM_SPEED_KEY = "Physics.swim_speed";
+        static constexpr const char* GRAVITY_KEY = "Physics.gravity";
+        static constexpr const char* JUMP_FORCE_KEY = "Physics.jump_force";
+        static constexpr const char* GROUND_FRICTION_KEY = "Physics.ground_friction";
+        static constexpr const char* AIR_FRICTION_KEY = "Physics.air_friction";
+        static constexpr const char* WATER_FRICTION_KEY = "Physics.water_friction";
+        static constexpr const char* ACCELERATION_KEY = "Physics.acceleration";
+        static constexpr const char* PLAYER_WIDTH_KEY = "Physics.player_width";
+        static constexpr const char* PLAYER_HEIGHT_KEY = "Physics.player_height";
+        static constexpr const char* PLAYER_EYE_HEIGHT_KEY = "Physics.player_eye_height";
+        static constexpr const char* STEP_HEIGHT_KEY = "Physics.step_height";
+        static constexpr const char* REACH_DISTANCE_KEY = "Physics.reach_distance";
+
+        static constexpr const char* WALK_SPEED = "walk_speed";
+        static constexpr const char* SPRINT_SPEED = "sprint_speed";
+        static constexpr const char* FLY_SPEED = "fly_speed";
+        static constexpr const char* SWIM_SPEED = "swim_speed";
+        static constexpr const char* GRAVITY = "gravity";
+        static constexpr const char* JUMP_FORCE = "jump_force";
+        static constexpr const char* GROUND_FRICTION = "ground_friction";
+        static constexpr const char* AIR_FRICTION = "air_friction";
+        static constexpr const char* WATER_FRICTION = "water_friction";
+        static constexpr const char* ACCELERATION = "acceleration";
+        static constexpr const char* PLAYER_WIDTH = "player_width";
+        static constexpr const char* PLAYER_HEIGHT = "player_height";
+        static constexpr const char* PLAYER_EYE_HEIGHT = "player_eye_height";
+        static constexpr const char* STEP_HEIGHT = "step_height";
+        static constexpr const char* REACH_DISTANCE = "reach_distance";
+    };
+
 private:
     Config() = default;
     ~Config() = default;

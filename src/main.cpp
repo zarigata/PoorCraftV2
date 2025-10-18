@@ -12,6 +12,19 @@
 #include "poorcraft/rendering/Shader.h"
 #include "poorcraft/rendering/Texture.h"
 #include "poorcraft/world/World.h"
+#include "poorcraft/physics/Player.h"
+#include <glm/glm.hpp>
+#include <glm/gtx/norm.hpp>
+#include <cmath>
+#if defined(__has_include)
+#if __has_include("poorcraft/rendering/DebugRenderer.h")
+#include "poorcraft/rendering/DebugRenderer.h"
+#define POORCRAFT_HAS_DEBUG_RENDERER 1
+#endif
+#endif
+#ifndef POORCRAFT_HAS_DEBUG_RENDERER
+#define POORCRAFT_HAS_DEBUG_RENDERER 0
+#endif
 #include "poorcraft/events/WindowEvent.h"
 #include <iostream>
 #include <memory>
@@ -163,6 +176,10 @@ int main(int argc, char* argv[]) {
         camera.updateProjectionMatrix(fov, aspectRatio, 0.1f, 1000.0f);
         PoorCraft::Renderer::getInstance().setCamera(&camera);
 
+#if POORCRAFT_HAS_DEBUG_RENDERER
+        PoorCraft::DebugRenderer::getInstance().initialize();
+#endif
+
         // Subscribe to window resize events to update camera projection
         PoorCraft::EventBus::getInstance().subscribe(PoorCraft::EventType::WindowResize, 
             [&](PoorCraft::Event& e) {
@@ -209,36 +226,57 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // Set update callback with camera controls
+        auto physicsWorld = std::make_shared<PoorCraft::PhysicsWorld>(*world);
+        auto cameraPtr = std::shared_ptr<PoorCraft::Camera>(&camera, [](PoorCraft::Camera*) {});
+        auto player = std::make_unique<PoorCraft::Player>(physicsWorld, cameraPtr);
+        player->setPosition(glm::vec3(0.0f, 70.0f, 0.0f));
+
+#if POORCRAFT_HAS_DEBUG_RENDERER
+        bool debugEnabled = false;
+#endif
+
+        // Set update callback with player-driven movement
         gameLoop.setUpdateCallback([&](float deltaTime) {
-            // Update game logic
             auto& input = PoorCraft::Input::getInstance();
-            
-            // Camera movement controls
-            float moveSpeed = 5.0f * deltaTime;
-            float sensitivity = config.get_float(poorcraft::Config::ControlsConfig::MOUSE_SENSITIVITY_KEY, 1.0f) * 0.1f;
-            
-            // Movement
+
+            glm::vec3 wishDirection(0.0f);
             if (input.isKeyHeld(GLFW_KEY_W)) {
-                camera.move(camera.getForward() * moveSpeed);
+                wishDirection.z += 1.0f;
             }
             if (input.isKeyHeld(GLFW_KEY_S)) {
-                camera.move(-camera.getForward() * moveSpeed);
+                wishDirection.z -= 1.0f;
             }
             if (input.isKeyHeld(GLFW_KEY_A)) {
-                camera.move(-camera.getRight() * moveSpeed);
+                wishDirection.x -= 1.0f;
             }
             if (input.isKeyHeld(GLFW_KEY_D)) {
-                camera.move(camera.getRight() * moveSpeed);
+                wishDirection.x += 1.0f;
             }
-            if (input.isKeyHeld(GLFW_KEY_SPACE)) {
-                camera.move(camera.getUp() * moveSpeed);
+
+            if (glm::length2(wishDirection) > 0.0f) {
+                wishDirection = glm::normalize(wishDirection);
             }
-            if (input.isKeyHeld(GLFW_KEY_LEFT_SHIFT)) {
-                camera.move(-camera.getUp() * moveSpeed);
+
+            if (player->isFlying()) {
+                float vertical = 0.0f;
+                if (input.isKeyHeld(GLFW_KEY_SPACE)) {
+                    vertical += 1.0f;
+                }
+                if (input.isKeyHeld(GLFW_KEY_LEFT_SHIFT)) {
+                    vertical -= 1.0f;
+                }
+                wishDirection.y = vertical;
             }
-            
-            // Mouse look - check if right mouse button is pressed
+
+            bool sprinting = input.isKeyHeld(GLFW_KEY_LEFT_SHIFT) && !player->isFlying();
+            bool jumpRequested = !player->isFlying() && input.wasKeyJustPressed(GLFW_KEY_SPACE);
+            bool flyToggle = input.wasKeyJustPressed(GLFW_KEY_F);
+            bool swimToggle = false;
+
+            player->handleInput(wishDirection, sprinting, jumpRequested, flyToggle, swimToggle);
+            player->update(deltaTime);
+
+            float sensitivity = config.get_float(poorcraft::Config::ControlsConfig::MOUSE_SENSITIVITY_KEY, 1.0f) * 0.1f;
             if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
                 auto mouseDelta = input.getMouseDelta();
                 float yaw = mouseDelta.x * sensitivity * deltaTime;
@@ -246,8 +284,32 @@ int main(int argc, char* argv[]) {
                 camera.rotate(yaw, pitch);
             }
 
-            // Update world streaming based on camera position
-            world->update(camera.getPosition(), renderDistance);
+#if POORCRAFT_HAS_DEBUG_RENDERER
+            if (input.wasKeyJustPressed(GLFW_KEY_F3)) {
+                debugEnabled = !debugEnabled;
+                PoorCraft::DebugRenderer::getInstance().setEnabled(debugEnabled);
+            }
+
+            auto& debugRenderer = PoorCraft::DebugRenderer::getInstance();
+            if (debugEnabled) {
+                debugRenderer.clear();
+                debugRenderer.clear();
+                debugRenderer.drawAABB(player->getBounds(), glm::vec3(1.0f, 0.0f, 0.0f));
+                const auto velocity = player->getVelocity();
+                const float velocityLengthSq = glm::length2(velocity);
+                if (velocityLengthSq > 0.0f) {
+                    const float velocityLength = std::sqrt(velocityLengthSq);
+                    debugRenderer.drawRay(player->getPosition(), glm::normalize(velocity), velocityLength, glm::vec3(0.0f, 0.0f, 1.0f));
+                }
+                const auto target = player->getTargetBlock();
+                if (target.hit) {
+                    auto blockAABB = physicsWorld->getBlockAABB(target.blockPos.x, target.blockPos.y, target.blockPos.z);
+                    debugRenderer.drawAABB(blockAABB, glm::vec3(0.0f, 1.0f, 0.0f));
+                }
+            }
+#endif
+
+            world->update(player->getPosition(), renderDistance);
         });
 
         // Set render callback with renderer API
@@ -287,6 +349,12 @@ int main(int argc, char* argv[]) {
                 world->render(camera, *blockShader);
             }
 
+#if POORCRAFT_HAS_DEBUG_RENDERER
+            if (debugEnabled) {
+                PoorCraft::DebugRenderer::getInstance().render(camera);
+            }
+#endif
+
             renderer.endFrame();
         });
 
@@ -296,10 +364,6 @@ int main(int argc, char* argv[]) {
         gameLoop.run();
 
         // Cleanup
-        PC_INFO("=== Shutting Down ===");
-        if (world) {
-            world->shutdown();
-            world.reset();
         }
 
         PoorCraft::Renderer::getInstance().shutdown();

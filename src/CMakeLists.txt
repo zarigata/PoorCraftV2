@@ -5,6 +5,8 @@ file(GLOB_RECURSE SOURCES
     "*.cpp"
     "core/*.cpp"
     "platform/*.cpp"
+    "physics/*.cpp"
+    "rendering/*.cpp"
     "utils/*.cpp"
     "world/*.cpp"
 )
