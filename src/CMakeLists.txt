@@ -6,10 +6,20 @@ file(GLOB_RECURSE SOURCES
     "core/*.cpp"
     "platform/*.cpp"
     "utils/*.cpp"
+    "world/*.cpp"
 )
 
 # Create executable target
 add_executable(PoorCraft ${SOURCES})
+
+add_custom_command(TARGET PoorCraft POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/assets
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/shaders
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders
+)
 
 # Link against third-party libraries
 target_link_libraries(PoorCraft

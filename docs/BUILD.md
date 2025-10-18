@@ -448,3 +448,18 @@ If you encounter issues not covered in this documentation:
 ## Advanced Configuration
 
 For advanced users, see the [CMake documentation](https://cmake.org/documentation/) for additional configuration options and toolchain files.
+
+## Assets
+
+The `assets/` directory contains the following subdirectories:
+
+| Path | Description |
+|------|-------------|
+| `assets/fonts/` | Font files |
+| `assets/textures/blocks/` | 16×16 block textures packed into the world atlas (stone, dirt, grass, sand, water) |
+
+## Performance Notes
+
+- **Render distance** (`Gameplay.render_distance` in `config.ini`) controls how many chunk rings are loaded.
+- **Chunk streaming budgets** (`World.chunk_generation_per_frame`, `World.chunk_meshing_per_frame`) balance responsiveness vs. frame time.
+- **Greedy meshing** and frustum culling dramatically reduce draw calls, but profiling is advised when changing atlas or block sets.

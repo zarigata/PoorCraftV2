@@ -12,6 +12,7 @@ This document provides comprehensive API reference for the core systems in the P
 - [Game Loop API](#game-loop-api)
 - [Event System API](#event-system-api)
 - [Resource Management API](#resource-management-api)
+- [World & Chunk System API](#world--chunk-system-api)
 - [Memory Management API](#memory-management-api)
 
 ## Logger API
@@ -1364,6 +1365,264 @@ std::cout << "Resource memory: " << memoryUsage / 1024 << " KB" << std::endl;
 // Clear all resources
 PoorCraft::ResourceManager::getInstance().clear();
 ```
+
+## World & Chunk System API
+
+The voxel world stack consists of block metadata, chunk storage, greedy meshing, streaming queues, and frustum culling. Public headers live in `include/poorcraft/world/` with implementations under `src/world/`.
+
+### BlockType (`include/poorcraft/world/BlockType.h`)
+
+```cpp
+struct BlockType {
+    uint16_t id;
+    std::string name;
+    bool isSolid;
+    bool isOpaque;
+    bool isTransparent;
+    std::array<std::string, 6> textureIndices;
+    uint8_t lightEmission;
+    float hardness;
+
+    BlockType();
+
+    BlockType& setId(uint16_t newId);
+    BlockType& setName(const std::string& newName);
+    BlockType& setSolid(bool solid);
+    BlockType& setOpaque(bool opaque);
+    BlockType& setTransparent(bool transparent);
+    BlockType& setTextureAllFaces(const std::string& textureName);
+    BlockType& setTextureForFace(BlockFace face, const std::string& textureName);
+    BlockType& setTexturePerFace(const std::array<std::string, 6>& textures);
+    BlockType& setLightEmission(uint8_t emission);
+    BlockType& setHardness(float blockHardness);
+
+    const std::string& getTextureName(BlockFace face) const;
+};
+```
+
+- **ID 0** is reserved for AIR (empty block).
+- `textureIndices` holds atlas entry names per face (FRONT, BACK, LEFT, RIGHT, TOP, BOTTOM). Empty entries fall back to `textureIndices[0]`.
+- `isSolid`, `isOpaque`, and `isTransparent` inform collision, face culling, and render ordering.
+
+**Example:**
+
+```cpp
+BlockType grass;
+grass.setName("grass")
+     .setSolid(true)
+     .setOpaque(true)
+     .setTransparent(false)
+     .setTextureAllFaces("grass_side")
+     .setTextureForFace(BlockFace::TOP, "grass_top")
+     .setTextureForFace(BlockFace::BOTTOM, "dirt");
+```
+
+### BlockRegistry (`include/poorcraft/world/BlockRegistry.h`)
+
+Thread-safe singleton responsible for registering and querying block definitions.
+
+```cpp
+class BlockRegistry {
+public:
+    static BlockRegistry& getInstance();
+
+    void initialize();
+    void clear();
+
+    uint16_t registerBlock(BlockType block);
+
+    const BlockType& getBlock(uint16_t id) const;
+    const BlockType* getBlockByName(const std::string& name) const;
+    uint16_t getBlockID(const std::string& name) const;
+
+    bool hasBlock(uint16_t id) const;
+    bool hasBlock(const std::string& name) const;
+
+    size_t getBlockCount() const;
+};
+```
+
+- `initialize()` wipes the registry and inserts default types: AIR, STONE, DIRT, GRASS, SAND, WATER.
+- `registerBlock()` auto-assigns IDs if `block.id == 0` and enforces unique names/IDs.
+- Unknown lookups return the AIR definition (ID 0) while logging a warning.
+
+### ChunkCoord (`include/poorcraft/world/ChunkCoord.h`)
+
+Represents chunk grid coordinates (X/Z) and provides conversions to/from world space.
+
+```cpp
+struct ChunkCoord {
+    int32_t x;
+    int32_t z;
+
+    bool operator==(const ChunkCoord& other) const;
+    bool operator!=(const ChunkCoord& other) const;
+    bool operator<(const ChunkCoord& other) const;
+
+    static ChunkCoord fromWorldPos(float worldX, float worldZ);
+
+    glm::vec3 toWorldPos() const;
+    int32_t getDistance(const ChunkCoord& other) const;
+    int32_t getDistanceSquared(const ChunkCoord& other) const;
+    std::string toString() const;
+};
+
+struct ChunkCoordHash {
+    size_t operator()(const ChunkCoord& coord) const noexcept;
+};
+```
+
+- `fromWorldPos()` performs 16-block cell floor division (negative coordinates handled correctly).
+- `toWorldPos()` returns chunk origin in world space with `Y = 0`.
+- `ChunkCoordHash` enables use as unordered-map keys for chunk storage.
+
+### Chunk (`include/poorcraft/world/Chunk.h`)
+
+Stores block IDs for a `16×16×256` volume via a contiguous `std::array`.
+
+```cpp
+class Chunk {
+public:
+    static constexpr int32_t CHUNK_SIZE_X = 16;
+    static constexpr int32_t CHUNK_SIZE_Y = 256;
+    static constexpr int32_t CHUNK_SIZE_Z = 16;
+
+    explicit Chunk(const ChunkCoord& chunkPosition);
+
+    uint16_t getBlock(int32_t x, int32_t y, int32_t z) const;
+    void setBlock(int32_t x, int32_t y, int32_t z, uint16_t blockId);
+
+    bool getBlockSafe(int32_t x, int32_t y, int32_t z, uint16_t& outBlock) const;
+    void fill(uint16_t blockId);
+
+    bool isEmpty() const;
+    const ChunkCoord& getPosition() const;
+
+    bool isDirty() const;
+    void setDirty(bool dirtyState);
+
+    uint32_t getBlockCount() const;
+};
+```
+
+- `setBlock()` updates the dirty flag and maintains a non-AIR block counter.
+- `fill()` bulk-initializes the chunk with a single ID (AIR resets the block count to zero).
+- `isDirty()` indicates whether the chunk needs a mesh rebuild.
+
+### ChunkMesh (`include/poorcraft/world/ChunkMesh.h`)
+
+Generates GPU-ready mesh data from chunk blocks using greedy meshing.
+
+- `bool generate(Chunk& chunk, ChunkManager& manager, TextureAtlas& atlas);`
+- `void clear();`
+- `bool isEmpty() const;`
+- `std::size_t getVertexCount() const;`
+- `std::size_t getIndexCount() const;`
+- `std::shared_ptr<VertexArray> getVAO() const;`
+
+Greedy meshing collapses coplanar faces, fetches per-face UVs from the block `TextureAtlas`, populates `std::vector<BlockVertex>`, and uploads to a `VertexArray` configured with the renderer's layout.
+
+### ChunkManager (`include/poorcraft/world/ChunkManager.h`)
+
+Coordinates chunk generation, meshing, streaming, and unloading.
+
+```cpp
+class ChunkManager {
+public:
+    void initialize();
+    void shutdown();
+
+    void update(const glm::vec3& cameraPosition, int renderDistance);
+
+    Chunk* getChunk(const ChunkCoord& coord) const;
+    bool hasChunk(const ChunkCoord& coord) const;
+    Chunk& getOrCreateChunk(const ChunkCoord& coord);
+    void unloadChunk(const ChunkCoord& coord);
+
+    std::size_t getLoadedChunkCount() const;
+    ChunkMesh* getChunkMesh(const ChunkCoord& coord) const;
+
+    void setTextureAtlas(TextureAtlas* atlasPtr);
+
+    const std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash>& getChunks() const;
+    const std::unordered_map<ChunkCoord, std::unique_ptr<ChunkMesh>, ChunkCoordHash>& getMeshes() const;
+};
+```
+
+- Maintains generation and meshing queues with configurable per-frame budgets.
+- Placeholder generation fills layers (stone/dirt) up to `y=64` and caps with grass.
+- `update()` loads new chunks within render radius, meshes dirty chunks, and unloads distant ones (`renderDistance + unloadMargin`).
+
+### Frustum (`include/poorcraft/world/Frustum.h`)
+
+Extracts view frustum planes and provides intersection tests.
+
+- `Frustum(const glm::mat4& viewProjection);`
+- `void update(const glm::mat4& viewProjection);`
+- `bool containsPoint(const glm::vec3& point) const;`
+- `bool containsAABB(const AABB& bounds) const;`
+- `bool containsSphere(const glm::vec3& center, float radius) const;`
+
+`AABB` supplies `getCenter()` and `getExtents()` for efficient plane tests. World rendering uses `containsAABB()` to cull chunk meshes.
+
+### World (`include/poorcraft/world/World.h`)
+
+High-level facade that integrates registry, texture atlas, chunk manager, and rendering.
+
+```cpp
+class World {
+public:
+    bool initialize(int renderDistance);
+    void shutdown();
+
+    void update(const glm::vec3& cameraPosition, int renderDistance);
+    void render(const Camera& camera, Shader& shader);
+
+    ChunkManager& getChunkManager();
+    BlockRegistry& getBlockRegistry();
+    TextureAtlas& getTextureAtlas();
+
+    const WorldRenderStats& getRenderStats() const;
+};
+```
+
+- `initialize()` resets the `BlockRegistry`, builds the block texture atlas (16×16 PNGs in `assets/textures/blocks/`), and initializes `ChunkManager`.
+- `update()` delegates streaming to the manager using the camera's world position.
+- `render()` constructs a `Frustum`, culls invisible meshes, binds the atlas texture, and draws chunk VAOs while collecting `WorldRenderStats`.
+
+**Integration (excerpt from `src/main.cpp`):**
+
+```cpp
+auto world = std::make_unique<PoorCraft::World>();
+world->initialize(renderDistance);
+
+gameLoop.setUpdateCallback([&](float dt) {
+    // camera movement ...
+    world->update(camera.getPosition(), renderDistance);
+});
+
+gameLoop.setRenderCallback([&]() {
+    renderer.beginFrame();
+    static auto blockShader = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Shader>("shaders/basic/block");
+    if (!blockShader || !blockShader->isValid()) {
+        blockShader = renderer.getDefaultShader();
+    }
+    blockShader->bind();
+    world->render(camera, *blockShader);
+    renderer.endFrame();
+});
+
+world->shutdown();
+```
+
+### Configuration Keys (`config.ini`)
+
+- `Gameplay.render_distance` — chunk radius around the camera (default `8`).
+- `World.chunk_generation_per_frame` — generation budget per update (default `1`).
+- `World.chunk_meshing_per_frame` — meshing budget per update (default `2`).
+- `World.chunk_unload_margin` — extra chunks beyond render distance before unloading (default `2`).
+
+Tune these values to balance streaming responsiveness and performance.
 
 ## Memory Management API
 

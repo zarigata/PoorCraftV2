@@ -11,6 +11,7 @@
 #include "poorcraft/rendering/Camera.h"
 #include "poorcraft/rendering/Shader.h"
 #include "poorcraft/rendering/Texture.h"
+#include "poorcraft/world/World.h"
 #include "poorcraft/events/WindowEvent.h"
 #include <iostream>
 #include <memory>
@@ -196,6 +197,18 @@ int main(int argc, char* argv[]) {
         int maxFPS = config.get_int(poorcraft::Config::EngineConfig::MAX_FPS_KEY, 144);
         gameLoop.setMaxFPS(maxFPS);
 
+        // Initialize World system
+        PC_INFO("=== Initializing World System ===");
+        int renderDistance = config.get_int(poorcraft::Config::GameplayConfig::RENDER_DISTANCE_KEY, 8);
+        auto world = std::make_unique<PoorCraft::World>();
+        if (!world->initialize(renderDistance)) {
+            PC_FATAL("Failed to initialize world system");
+            PoorCraft::Renderer::getInstance().shutdown();
+            window.shutdown();
+            PoorCraft::Window::terminateGLFW();
+            return 1;
+        }
+
         // Set update callback with camera controls
         gameLoop.setUpdateCallback([&](float deltaTime) {
             // Update game logic
@@ -232,6 +245,9 @@ int main(int argc, char* argv[]) {
                 float pitch = mouseDelta.y * sensitivity * deltaTime;
                 camera.rotate(yaw, pitch);
             }
+
+            // Update world streaming based on camera position
+            world->update(camera.getPosition(), renderDistance);
         });
 
         // Set render callback with renderer API
@@ -246,48 +262,31 @@ int main(int argc, char* argv[]) {
             renderer.setClearColor(glm::vec4(0.2f, 0.3f, 0.3f, 1.0f));
             renderer.clear();
             
-            // Load shader and texture if not already loaded
-            static std::shared_ptr<PoorCraft::Shader> shader = nullptr;
-            static std::shared_ptr<PoorCraft::Texture> texture = nullptr;
-            static bool resourcesLoaded = false;
-            
-            if (!resourcesLoaded) {
+            // Load block shader if not already loaded
+            static std::shared_ptr<PoorCraft::Shader> blockShader = nullptr;
+            static bool shaderLoaded = false;
+
+            if (!shaderLoaded) {
                 try {
-                    shader = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Shader>("shaders/basic/texture");
-                    if (shader && shader->isValid()) {
-                        PC_INFO("Successfully loaded texture shader");
+                    blockShader = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Shader>("shaders/basic/block");
+                    if (!blockShader || !blockShader->isValid()) {
+                        PC_WARN("Failed to load block shader, using default shader");
+                        blockShader = renderer.getDefaultShader();
                     } else {
-                        PC_WARN("Failed to load texture shader, using default shader");
-                        shader = renderer.getDefaultShader();
+                        PC_INFO("Successfully loaded block shader");
                     }
-                    
-                    texture = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Texture>("assets/textures/test_texture.png");
-                    if (texture && texture->isValid()) {
-                        PC_INFO("Successfully loaded test texture");
-                    } else {
-                        PC_WARN("Failed to load test texture, using default texture");
-                        texture = renderer.getDefaultTexture();
-                    }
-                    
-                    resourcesLoaded = true;
                 } catch (const std::exception& e) {
-                    PC_ERROR("Error loading resources: " + std::string(e.what()));
-                    shader = renderer.getDefaultShader();
-                    texture = renderer.getDefaultTexture();
-                    resourcesLoaded = true;
+                    PC_ERROR("Error loading block shader: " + std::string(e.what()));
+                    blockShader = renderer.getDefaultShader();
                 }
+                shaderLoaded = true;
             }
-            
-            // Render a cube if resources are loaded
-            if (shader && texture && shader->isValid() && texture->isValid()) {
-                glm::mat4 model = glm::mat4(1.0f);
-                model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-                model = glm::scale(model, glm::vec3(1.0f));
-                
-                renderer.drawCube(model, glm::vec4(1.0f), texture, *shader);
+
+            if (blockShader) {
+                blockShader->bind();
+                world->render(camera, *blockShader);
             }
-            
-            // End frame
+
             renderer.endFrame();
         });
 
@@ -298,6 +297,11 @@ int main(int argc, char* argv[]) {
 
         // Cleanup
         PC_INFO("=== Shutting Down ===");
+        if (world) {
+            world->shutdown();
+            world.reset();
+        }
+
         PoorCraft::Renderer::getInstance().shutdown();
         window.shutdown();
         PoorCraft::Window::terminateGLFW();

@@ -180,6 +180,87 @@ The engine is designed with clear module boundaries:
 - **Path resolution**: Base path + relative path system
 - **Factory pattern**: Register custom resource types
 
+### World & Chunk Architecture
+
+#### Block System
+**Purpose**: Define block metadata for rendering, collision, and gameplay.
+
+**Components**:
+- `BlockType` data structure (`include/poorcraft/world/BlockType.h`)
+- `BlockRegistry` singleton (`include/poorcraft/world/BlockRegistry.h`)
+
+**Key Features**:
+- **ID space**: 16-bit identifiers (0 reserved for AIR) enabling up to 65,535 block types.
+- **Face textures**: Per-face texture names map into the `TextureAtlas` for flexible visuals.
+- **Material flags**: `isSolid`, `isOpaque`, `isTransparent`, `lightEmission`, and `hardness` prepare for collision, lighting, and mining systems.
+- **Default set**: AIR, STONE, DIRT, GRASS, SAND, WATER registered during engine boot.
+
+#### Chunk System
+**Purpose**: Store block data and provide cache-friendly access.
+
+**Components**:
+- `ChunkCoord` for spatial hashing and world/ chunk conversions.
+- `Chunk` class storing a `16×16×256` array of block IDs.
+
+**Key Features**:
+- **Linear storage**: `std::array<uint16_t, 65'536>` for CPU cache efficiency.
+- **Dirty tracking**: Chunks mark themselves dirty when blocks change to trigger remeshing.
+- **Block count cache**: Fast `isEmpty()` checks to skip useless meshes.
+- **Safe accessors**: Bounds-checked helper for defensive reads.
+
+#### Chunk Meshing
+**Purpose**: Convert voxel data into optimized GPU geometry.
+
+**Components**:
+- `ChunkMesh` (`include/poorcraft/world/ChunkMesh.h`)
+- `VertexArray` abstraction for uploading buffers.
+
+**Key Features**:
+- **Greedy meshing**: Merges coplanar faces, reducing vertices by ~80% over naive meshing.
+- **Atlas integration**: Fetches UVs from the block texture atlas for each face.
+- **Face culling**: Skips faces adjacent to opaque neighbors across chunk boundaries.
+- **Stats**: Exposes vertex/index counts for profiling.
+
+#### Chunk Management
+**Purpose**: Stream chunks in/out of memory and manage mesh rebuilds.
+
+**Components**:
+- `ChunkManager` (`include/poorcraft/world/ChunkManager.h`)
+- Generation queue (chunks awaiting population).
+- Meshing queue (chunks awaiting mesh rebuild).
+
+**Key Features**:
+- **Streaming radius**: Driven by `Gameplay.render_distance` and configurable margins.
+- **Per-frame budgets**: Configurable generation/meshing limits smooth out spikes.
+- **Procedural placeholder**: Flat world terrain (stone/dirt/grass) pending full terrain pipeline.
+- **Spatial hashing**: `std::unordered_map<ChunkCoord, ...>` for fast lookups.
+
+#### Frustum Culling
+**Purpose**: Avoid rendering chunks outside the camera frustum.
+
+**Components**:
+- `Frustum` utility (`include/poorcraft/world/Frustum.h`)
+- `AABB` helper for chunk bounds.
+
+**Key Features**:
+- **Plane extraction**: Gribb-Hartmann method from view-projection matrix.
+- **AABB testing**: Conservative tests preventing missed visible chunks.
+- **Future ready**: Sphere tests available for entity culling.
+
+#### World Coordinator
+**Purpose**: High-level façade integrating registry, texture atlas, chunk manager, and renderer.
+
+**Components**:
+- `World` class (`include/poorcraft/world/World.h`)
+- Block texture atlas builder (`World::createBlockTextureAtlas()`)
+- Render stats (`WorldRenderStats`)
+
+**Key Features**:
+- **Initialization flow**: Builds atlas, initializes registry, configures chunk manager with atlas pointer.
+- **Runtime update**: Streams chunks based on camera position every frame.
+- **Rendering**: Applies frustum culling, binds atlas texture, draws chunk VAOs, and tracks stats.
+- **Extensibility**: Central place to plug in terrain generation, lighting, and gameplay.
+
 #### Memory Management
 **Purpose**: Memory allocation tracking and pooling for performance
 
