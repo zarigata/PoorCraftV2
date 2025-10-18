@@ -7,6 +7,7 @@
 
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/world/BlockRegistry.h"
+#include "poorcraft/world/TerrainGenerator.h"
 
 namespace PoorCraft {
 
@@ -46,11 +47,19 @@ void ChunkManager::initialize() {
     lastCameraChunk = ChunkCoord(0, 0);
 
     loadStreamingSettings();
+
+    auto& config = poorcraft::Config::get_instance();
+    const int64_t worldSeed = static_cast<int64_t>(config.get_int("World.world_seed", 12345));
+    terrainGenerator = std::make_unique<TerrainGenerator>(worldSeed);
+    terrainGenerator->initialize();
+    PC_INFO("Terrain generator initialized with seed " + std::to_string(worldSeed));
 }
 
 void ChunkManager::shutdown() {
     PC_INFO("Shutting down ChunkManager. Removing " + std::to_string(chunks.size()) +
             " chunks and " + std::to_string(meshes.size()) + " meshes.");
+
+    terrainGenerator.reset();
 
     chunks.clear();
     meshes.clear();
@@ -192,24 +201,10 @@ const std::unordered_map<ChunkCoord, std::unique_ptr<ChunkMesh>, ChunkCoordHash>
 void ChunkManager::generateChunk(const ChunkCoord& coord) {
     auto chunk = std::make_unique<Chunk>(coord);
 
-    auto& registry = BlockRegistry::getInstance();
-    const uint16_t stoneId = registry.getBlockID("stone");
-    const uint16_t dirtId = registry.getBlockID("dirt");
-    const uint16_t grassId = registry.getBlockID("grass");
-
-    for (int y = 0; y < 64; ++y) {
-        const uint16_t blockId = y < 60 ? stoneId : dirtId;
-        for (int z = 0; z < Chunk::CHUNK_SIZE_Z; ++z) {
-            for (int x = 0; x < Chunk::CHUNK_SIZE_X; ++x) {
-                chunk->setBlock(x, y, z, blockId);
-            }
-        }
-    }
-
-    for (int z = 0; z < Chunk::CHUNK_SIZE_Z; ++z) {
-        for (int x = 0; x < Chunk::CHUNK_SIZE_X; ++x) {
-            chunk->setBlock(x, 64, z, grassId);
-        }
+    if (terrainGenerator) {
+        terrainGenerator->generateChunk(*chunk, coord);
+    } else {
+        PC_WARN("Terrain generator not initialized, chunk will remain empty: " + coord.toString());
     }
 
     chunks.emplace(coord, std::move(chunk));

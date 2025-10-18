@@ -15,6 +15,8 @@
 
 namespace PoorCraft {
 
+class TerrainGenerator;
+
 class ChunkManager {
 public:
     ChunkManager();
@@ -66,6 +68,8 @@ private:
     int chunksToGeneratePerFrame;
     int chunksToMeshPerFrame;
     int unloadMargin;
+
+    std::unique_ptr<TerrainGenerator> terrainGenerator;
 };
 
 } // namespace PoorCraft
