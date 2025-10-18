@@ -25,7 +25,8 @@ struct AtlasEntry {
     float u1 = 0.0f;
     float v1 = 0.0f;
 };
-
+// Texture atlas entries assume source textures retain their original orientation
+// (no vertical flip), matching the policy used by `Texture` loading.
 class TextureAtlas {
 public:
     explicit TextureAtlas(int atlasSize = 2048, TextureFormat format = TextureFormat::RGBA);

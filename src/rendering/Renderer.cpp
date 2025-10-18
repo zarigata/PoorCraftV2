@@ -3,11 +3,9 @@
 #include <array>
 #include <vector>
 
-#include <glm/gtc/matrix_transform.hpp>
-
 #include "poorcraft/core/Logger.h"
-#include "poorcraft/platform/Platform.h"
 #include "poorcraft/rendering/GPUCapabilities.h"
+#include "poorcraft/resource/ResourceManager.h"
 
 namespace PoorCraft {
 
@@ -138,20 +136,29 @@ void Renderer::drawQuad(const glm::mat4& model,
     }
 
     shader.bind();
-    shader.setMat4("model", model);
-    shader.setVec4("color", color);
+    ++m_Stats.shaderBinds;
 
-    if (texture) {
-        texture->bind(0);
-        shader.setInt("textureSampler", 0);
-        ++m_Stats.textureBinds;
-    } else if (m_DefaultTexture) {
-        m_DefaultTexture->bind(0);
-        shader.setInt("textureSampler", 0);
-        ++m_Stats.textureBinds;
+    applyCameraUniforms(shader);
+    if (shader.hasUniform("model")) {
+        shader.setMat4("model", model);
+    }
+    if (shader.hasUniform("tintColor")) {
+        shader.setVec4("tintColor", color);
+    } else if (shader.hasUniform("color")) {
+        shader.setVec4("color", color);
     }
 
-    ++m_Stats.shaderBinds;
+    std::shared_ptr<Texture> textureToUse = texture;
+    if (!textureToUse && m_DefaultTexture) {
+        textureToUse = m_DefaultTexture;
+    }
+    if (texture) {
+        textureToUse->bind(0);
+        if (shader.hasUniform("textureSampler")) {
+            shader.setInt("textureSampler", 0);
+        }
+        ++m_Stats.textureBinds;
+    }
 
     m_QuadVAO->bind();
     if (m_QuadVAO->hasIndices()) {
@@ -176,20 +183,29 @@ void Renderer::drawCube(const glm::mat4& model,
     }
 
     shader.bind();
-    shader.setMat4("model", model);
-    shader.setVec4("color", color);
+    ++m_Stats.shaderBinds;
 
-    if (texture) {
-        texture->bind(0);
-        shader.setInt("textureSampler", 0);
-        ++m_Stats.textureBinds;
-    } else if (m_DefaultTexture) {
-        m_DefaultTexture->bind(0);
-        shader.setInt("textureSampler", 0);
-        ++m_Stats.textureBinds;
+    applyCameraUniforms(shader);
+    if (shader.hasUniform("model")) {
+        shader.setMat4("model", model);
+    }
+    if (shader.hasUniform("tintColor")) {
+        shader.setVec4("tintColor", color);
+    } else if (shader.hasUniform("color")) {
+        shader.setVec4("color", color);
     }
 
-    ++m_Stats.shaderBinds;
+    std::shared_ptr<Texture> textureToUse = texture;
+    if (!textureToUse && m_DefaultTexture) {
+        textureToUse = m_DefaultTexture;
+    }
+    if (textureToUse) {
+        textureToUse->bind(0);
+        if (shader.hasUniform("textureSampler")) {
+            shader.setInt("textureSampler", 0);
+        }
+        ++m_Stats.textureBinds;
+    }
 
     m_CubeVAO->bind();
     if (m_CubeVAO->hasIndices()) {
@@ -223,8 +239,14 @@ void Renderer::drawLine(const glm::vec3& start,
     }
 
     shader.bind();
-    shader.setVec4("color", color);
     ++m_Stats.shaderBinds;
+
+    applyCameraUniforms(shader);
+    if (shader.hasUniform("tintColor")) {
+        shader.setVec4("tintColor", color);
+    } else if (shader.hasUniform("color")) {
+        shader.setVec4("color", color);
+    }
 
     m_LineVAO->bind();
     m_LineVAO->draw(GL_LINES, 2);
@@ -257,6 +279,10 @@ void Renderer::resetStats() {
     m_Stats = {};
 }
 
+void Renderer::setCamera(const Camera* camera) {
+    m_ActiveCamera = camera;
+}
+
 std::shared_ptr<Shader> Renderer::getDefaultShader() const {
     return m_DefaultShader;
 }
@@ -277,16 +303,11 @@ void Renderer::createDefaultResources() {
 
     m_DefaultTexture = Texture::createFromData(1, 1, TextureFormat::RGBA, whitePixel, texParams);
 
-    std::string shaderBase = poorcraft::Platform::join_path("shaders", "basic/texture");
-    if (!poorcraft::Platform::is_absolute_path(shaderBase)) {
-        shaderBase = poorcraft::Platform::join_path(poorcraft::Platform::get_current_working_directory(), shaderBase);
-    }
-
-    auto shader = std::make_shared<Shader>(shaderBase);
-    if (shader->load()) {
-        m_DefaultShader = shader;
+    auto shaderHandle = ResourceManager::getInstance().load<Shader>("shaders/basic/texture");
+    if (shaderHandle.isValid()) {
+        m_DefaultShader = shaderHandle.getSharedPtr();
     } else {
-        PC_ERRORF("Failed to load default shader from '%s'", shaderBase.c_str());
+        PC_ERROR("Failed to load default shader 'shaders/basic/texture'");
         m_DefaultShader.reset();
     }
 }
@@ -324,6 +345,19 @@ std::shared_ptr<VertexArray> Renderer::createQuadVAO() {
     vao->setIndexBuffer(indices.data(), indices.size(), BufferUsage::STATIC_DRAW);
 
     return vao;
+}
+
+void Renderer::applyCameraUniforms(Shader& shader) const {
+    if (!m_ActiveCamera) {
+        return;
+    }
+
+    if (shader.hasUniform("view")) {
+        shader.setMat4("view", m_ActiveCamera->getViewMatrix());
+    }
+    if (shader.hasUniform("projection")) {
+        shader.setMat4("projection", m_ActiveCamera->getProjectionMatrix());
+    }
 }
 
 std::shared_ptr<VertexArray> Renderer::createCubeVAO() {

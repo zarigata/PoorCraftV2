@@ -232,17 +232,29 @@ void GPUCapabilities::queryVRAM() {
     m_Data.availableVRAMMB = 0;
 
     if (hasExtension(m_Extensions, "GL_NVX_gpu_memory_info")) {
-        GLint totalMemoryKB = 0;
-        GLint availableMemoryKB = 0;
-        glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, &totalMemoryKB);
-        glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, &availableMemoryKB);
-        m_Data.totalVRAMMB = static_cast<std::size_t>(totalMemoryKB) / 1024;
-        m_Data.availableVRAMMB = static_cast<std::size_t>(availableMemoryKB) / 1024;
+#ifdef GL_NVX_gpu_memory_info
+        if (hasExtension(m_Extensions, "GL_NVX_gpu_memory_info")) {
+            GLint totalMemoryKB = 0;
+            GLint availableMemoryKB = 0;
+            glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, &totalMemoryKB);
+            glGetIntegerv(GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX, &availableMemoryKB);
+            m_Data.totalVRAMMB = static_cast<std::size_t>(totalMemoryKB) / 1024;
+            m_Data.availableVRAMMB = static_cast<std::size_t>(availableMemoryKB) / 1024;
+        }
+#else
+        PC_WARN("GL_NVX_gpu_memory_info extension detected but enums not available in GLAD headers");
+#endif
     } else if (hasExtension(m_Extensions, "GL_ATI_meminfo")) {
-        GLint vboMemory[4] = {0};
-        glGetIntegerv(GL_VBO_FREE_MEMORY_ATI, vboMemory);
-        m_Data.totalVRAMMB = static_cast<std::size_t>(vboMemory[0]) / 1024;
-        m_Data.availableVRAMMB = static_cast<std::size_t>(vboMemory[1]) / 1024;
+#ifdef GL_ATI_meminfo
+        if (hasExtension(m_Extensions, "GL_ATI_meminfo")) {
+            GLint vboMemory[4] = {0};
+            glGetIntegerv(GL_VBO_FREE_MEMORY_ATI, vboMemory);
+            m_Data.totalVRAMMB = static_cast<std::size_t>(vboMemory[0]) / 1024;
+            m_Data.availableVRAMMB = static_cast<std::size_t>(vboMemory[1]) / 1024;
+        }
+#else
+        PC_WARN("GL_ATI_meminfo extension detected but enums not available in GLAD headers");
+#endif
     }
 }
 

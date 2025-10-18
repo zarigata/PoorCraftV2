@@ -7,14 +7,15 @@
 #include "poorcraft/core/EventBus.h"
 #include "poorcraft/resource/ResourceManager.h"
 #include "poorcraft/resource/BinaryResource.h"
+#include "poorcraft/rendering/Renderer.h"
+#include "poorcraft/rendering/Camera.h"
+#include "poorcraft/rendering/Shader.h"
+#include "poorcraft/rendering/Texture.h"
 #include "poorcraft/events/WindowEvent.h"
-
 #include <iostream>
-#include <exception>
-#include <glad/glad.h>
+#include <memory>
 
 int main(int argc, char* argv[]) {
-    try {
         // Initialize logging system
         poorcraft::Logger::get_instance().initialize(poorcraft::LogLevel::INFO, true, "poorcraft.log");
 
@@ -143,9 +144,30 @@ int main(int argc, char* argv[]) {
                 PC_INFO("Window close requested by user");
             });
 
-        // Initialize Input system
-        PC_INFO("=== Initializing Input System ===");
-        PoorCraft::Input::getInstance().setWindow(&window);
+        // Initialize Renderer after window creation
+        PC_INFO("=== Initializing Renderer ===");
+        if (!PoorCraft::Renderer::getInstance().initialize()) {
+            PC_FATAL("Failed to initialize renderer");
+            PoorCraft::Window::terminateGLFW();
+            return 1;
+        }
+
+        // Create camera with perspective projection
+        PC_INFO("=== Creating Camera ===");
+        float fov = config.get_int(poorcraft::Config::GraphicsConfig::FOV_KEY, 90);
+        float aspectRatio = static_cast<float>(windowProps.width) / static_cast<float>(windowProps.height);
+        PoorCraft::Camera camera(PoorCraft::CameraType::PERSPECTIVE, 
+                                glm::vec3(0.0f, 0.0f, 5.0f), 
+                                glm::vec3(0.0f, 0.0f, 0.0f));
+        camera.updateProjectionMatrix(fov, aspectRatio, 0.1f, 1000.0f);
+        PoorCraft::Renderer::getInstance().setCamera(&camera);
+
+        // Subscribe to window resize events to update camera projection
+        PoorCraft::EventBus::getInstance().subscribe(PoorCraft::EventType::WindowResize, 
+            [&](PoorCraft::Event& e) {
+                auto& resizeEvent = static_cast<PoorCraft::events::WindowResizeEvent&>(e);
+                camera.onWindowResize(resizeEvent.getWidth(), resizeEvent.getHeight());
+            });
 
         // Initialize ResourceManager
         PC_INFO("=== Initializing Resource Manager ===");
@@ -174,25 +196,99 @@ int main(int argc, char* argv[]) {
         int maxFPS = config.get_int(poorcraft::Config::EngineConfig::MAX_FPS_KEY, 144);
         gameLoop.setMaxFPS(maxFPS);
 
-        // Set update callback
-        gameLoop.setUpdateCallback([](float deltaTime) {
+        // Set update callback with camera controls
+        gameLoop.setUpdateCallback([&](float deltaTime) {
             // Update game logic
             auto& input = PoorCraft::Input::getInstance();
             
-            // Test input - log when W key is pressed
-            if (input.wasKeyJustPressed(GLFW_KEY_W)) {
-                PC_DEBUG("W key pressed - Moving forward");
+            // Camera movement controls
+            float moveSpeed = 5.0f * deltaTime;
+            float sensitivity = config.get_float(poorcraft::Config::ControlsConfig::MOUSE_SENSITIVITY_KEY, 1.0f) * 0.1f;
+            
+            // Movement
+            if (input.isKeyHeld(GLFW_KEY_W)) {
+                camera.move(camera.getForward() * moveSpeed);
             }
-            if (input.wasKeyJustPressed(GLFW_KEY_ESCAPE)) {
-                PC_INFO("Escape key pressed");
+            if (input.isKeyHeld(GLFW_KEY_S)) {
+                camera.move(-camera.getForward() * moveSpeed);
+            }
+            if (input.isKeyHeld(GLFW_KEY_A)) {
+                camera.move(-camera.getRight() * moveSpeed);
+            }
+            if (input.isKeyHeld(GLFW_KEY_D)) {
+                camera.move(camera.getRight() * moveSpeed);
+            }
+            if (input.isKeyHeld(GLFW_KEY_SPACE)) {
+                camera.move(camera.getUp() * moveSpeed);
+            }
+            if (input.isKeyHeld(GLFW_KEY_LEFT_SHIFT)) {
+                camera.move(-camera.getUp() * moveSpeed);
+            }
+            
+            // Mouse look - check if right mouse button is pressed
+            if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
+                auto mouseDelta = input.getMouseDelta();
+                float yaw = mouseDelta.x * sensitivity * deltaTime;
+                float pitch = mouseDelta.y * sensitivity * deltaTime;
+                camera.rotate(yaw, pitch);
             }
         });
 
-        // Set render callback
-        gameLoop.setRenderCallback([]() {
-            // Clear screen with a nice color
-            glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // Set render callback with renderer API
+        gameLoop.setRenderCallback([&]() {
+            // Use renderer API instead of raw OpenGL calls
+            auto& renderer = PoorCraft::Renderer::getInstance();
+            
+            // Begin frame
+            renderer.beginFrame();
+            
+            // Set clear color and clear
+            renderer.setClearColor(glm::vec4(0.2f, 0.3f, 0.3f, 1.0f));
+            renderer.clear();
+            
+            // Load shader and texture if not already loaded
+            static std::shared_ptr<PoorCraft::Shader> shader = nullptr;
+            static std::shared_ptr<PoorCraft::Texture> texture = nullptr;
+            static bool resourcesLoaded = false;
+            
+            if (!resourcesLoaded) {
+                try {
+                    shader = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Shader>("shaders/basic/texture");
+                    if (shader && shader->isValid()) {
+                        PC_INFO("Successfully loaded texture shader");
+                    } else {
+                        PC_WARN("Failed to load texture shader, using default shader");
+                        shader = renderer.getDefaultShader();
+                    }
+                    
+                    texture = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Texture>("assets/textures/test_texture.png");
+                    if (texture && texture->isValid()) {
+                        PC_INFO("Successfully loaded test texture");
+                    } else {
+                        PC_WARN("Failed to load test texture, using default texture");
+                        texture = renderer.getDefaultTexture();
+                    }
+                    
+                    resourcesLoaded = true;
+                } catch (const std::exception& e) {
+                    PC_ERROR("Error loading resources: " + std::string(e.what()));
+                    shader = renderer.getDefaultShader();
+                    texture = renderer.getDefaultTexture();
+                    resourcesLoaded = true;
+                }
+            }
+            
+            // Render a cube if resources are loaded
+            if (shader && texture && shader->isValid() && texture->isValid()) {
+                glm::mat4 model = glm::mat4(1.0f);
+                model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+                model = glm::scale(model, glm::vec3(1.0f));
+                
+                renderer.drawCube(model, glm::vec4(1.0f), texture, *shader);
+            }
+            
+            // End frame
+            renderer.endFrame();
         });
 
         // Run the game loop
@@ -202,6 +298,7 @@ int main(int argc, char* argv[]) {
 
         // Cleanup
         PC_INFO("=== Shutting Down ===");
+        PoorCraft::Renderer::getInstance().shutdown();
         window.shutdown();
         PoorCraft::Window::terminateGLFW();
         PoorCraft::ResourceManager::getInstance().clear();

@@ -73,6 +73,7 @@ private:
     std::shared_ptr<VertexArray> createQuadVAO();
     std::shared_ptr<VertexArray> createCubeVAO();
     std::shared_ptr<VertexArray> createLineVAO();
+    void applyCameraUniforms(Shader& shader) const;
 
 private:
     glm::vec4 m_ClearColor = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);

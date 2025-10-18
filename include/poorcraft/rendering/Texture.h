@@ -41,6 +41,8 @@ struct TextureParams {
     float anisotropicFiltering = 0.0f;
 };
 
+// Textures retain their original orientation (no vertical flip). Texture atlas loading
+// follows the same policy to keep UV coordinates consistent across systems.
 class Texture : public Resource {
 public:
     Texture(const std::string& path, const TextureParams& params = {});
@@ -57,12 +59,17 @@ public:
     int getHeight() const;
     int getChannels() const;
     GLuint getTextureID() const;
+    GLenum getTarget() const { return m_Target; }
 
     static std::shared_ptr<Texture> createFromData(int width,
                                                    int height,
                                                    TextureFormat format,
                                                    const void* data,
                                                    const TextureParams& params = {});
+    static std::shared_ptr<Texture> createMultisample(int width,
+                                                      int height,
+                                                      TextureFormat format,
+                                                      int samples);
 
 private:
     GLenum getGLFormat(TextureFormat format) const;
@@ -78,6 +85,7 @@ private:
     int m_Height = 0;
     int m_Channels = 0;
     TextureParams m_Params;
+    GLenum m_Target = GL_TEXTURE_2D;
 };
 
 } // namespace PoorCraft

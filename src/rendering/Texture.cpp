@@ -44,7 +44,7 @@ bool Texture::load() {
         return false;
     }
 
-    stbi_set_flip_vertically_on_load(true);
+    stbi_set_flip_vertically_on_load(false);
 
     int width = 0;
     int height = 0;
@@ -62,17 +62,18 @@ bool Texture::load() {
 
     GLuint textureID = 0;
     glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    m_Target = GL_TEXTURE_2D;
+    glBindTexture(m_Target, textureID);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, glInternalFormat, width, height, 0, glFormat, GL_UNSIGNED_BYTE, data);
+    glTexImage2D(m_Target, 0, glInternalFormat, width, height, 0, glFormat, GL_UNSIGNED_BYTE, data);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, getGLFilter(m_Params.minFilter));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, getGLFilter(m_Params.magFilter));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, getGLWrap(m_Params.wrapS));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, getGLWrap(m_Params.wrapT));
+    glTexParameteri(m_Target, GL_TEXTURE_MIN_FILTER, getGLFilter(m_Params.minFilter));
+    glTexParameteri(m_Target, GL_TEXTURE_MAG_FILTER, getGLFilter(m_Params.magFilter));
+    glTexParameteri(m_Target, GL_TEXTURE_WRAP_S, getGLWrap(m_Params.wrapS));
+    glTexParameteri(m_Target, GL_TEXTURE_WRAP_T, getGLWrap(m_Params.wrapT));
 
     if (m_Params.generateMipmaps) {
-        glGenerateMipmap(GL_TEXTURE_2D);
+        glGenerateMipmap(m_Target);
     }
 
     if (m_Params.anisotropicFiltering > 0.0f) {
@@ -80,7 +81,7 @@ bool Texture::load() {
             GLfloat maxAniso = 0.0f;
             glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
             float aniso = std::min(m_Params.anisotropicFiltering, static_cast<float>(maxAniso));
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, aniso);
+            glTexParameterf(m_Target, GL_TEXTURE_MAX_ANISOTROPY_EXT, aniso);
         } else {
             PC_WARN("Anisotropic filtering requested but EXT_texture_filter_anisotropic not supported");
         }
@@ -120,11 +121,12 @@ ResourceType Texture::getType() const {
 
 void Texture::bind(uint32_t slot) const {
     glActiveTexture(GL_TEXTURE0 + slot);
-    glBindTexture(GL_TEXTURE_2D, m_TextureID);
+    glBindTexture(m_Target, m_TextureID);
 }
 
 void Texture::unbind() {
     glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
 }
 
 int Texture::getWidth() const {
@@ -154,13 +156,14 @@ std::shared_ptr<Texture> Texture::createFromData(int width,
     texture->m_Channels = texture->getChannelCount(format);
 
     glGenTextures(1, &texture->m_TextureID);
-    glBindTexture(GL_TEXTURE_2D, texture->m_TextureID);
+    texture->m_Target = GL_TEXTURE_2D;
+    glBindTexture(texture->m_Target, texture->m_TextureID);
 
     GLenum internalFormat = texture->getGLInternalFormat(format);
     GLenum glFormat = texture->getGLFormat(format);
     GLenum dataType = texture->getGLDataType(format);
 
-    glTexImage2D(GL_TEXTURE_2D,
+    glTexImage2D(texture->m_Target,
                  0,
                  internalFormat,
                  width,
@@ -170,13 +173,13 @@ std::shared_ptr<Texture> Texture::createFromData(int width,
                  dataType,
                  data);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texture->getGLFilter(params.minFilter));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, texture->getGLFilter(params.magFilter));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, texture->getGLWrap(params.wrapS));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, texture->getGLWrap(params.wrapT));
+    glTexParameteri(texture->m_Target, GL_TEXTURE_MIN_FILTER, texture->getGLFilter(params.minFilter));
+    glTexParameteri(texture->m_Target, GL_TEXTURE_MAG_FILTER, texture->getGLFilter(params.magFilter));
+    glTexParameteri(texture->m_Target, GL_TEXTURE_WRAP_S, texture->getGLWrap(params.wrapS));
+    glTexParameteri(texture->m_Target, GL_TEXTURE_WRAP_T, texture->getGLWrap(params.wrapT));
 
     if (params.generateMipmaps) {
-        glGenerateMipmap(GL_TEXTURE_2D);
+        glGenerateMipmap(texture->m_Target);
     }
 
     if (params.anisotropicFiltering > 0.0f) {
@@ -184,7 +187,7 @@ std::shared_ptr<Texture> Texture::createFromData(int width,
             GLfloat maxAniso = 0.0f;
             glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
             float aniso = std::min(params.anisotropicFiltering, static_cast<float>(maxAniso));
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, aniso);
+            glTexParameterf(texture->m_Target, GL_TEXTURE_MAX_ANISOTROPY_EXT, aniso);
         } else {
             PC_WARN("Anisotropic filtering requested but EXT_texture_filter_anisotropic not supported");
         }
@@ -207,6 +210,38 @@ std::shared_ptr<Texture> Texture::createFromData(int width,
     }
     size_t channels = static_cast<size_t>(std::max(1, texture->m_Channels));
     texture->setSize(static_cast<size_t>(width) * static_cast<size_t>(height) * channels * bytesPerChannel);
+
+    return texture;
+}
+
+std::shared_ptr<Texture> Texture::createMultisample(int width,
+                                                    int height,
+                                                    TextureFormat format,
+                                                    int samples) {
+    auto texture = std::shared_ptr<Texture>(new Texture("", {}));
+    texture->m_Width = width;
+    texture->m_Height = height;
+    texture->m_Channels = texture->getChannelCount(format);
+    texture->m_Target = GL_TEXTURE_2D_MULTISAMPLE;
+
+    glGenTextures(1, &texture->m_TextureID);
+    glBindTexture(texture->m_Target, texture->m_TextureID);
+
+    GLenum internalFormat = texture->getGLInternalFormat(format);
+    GLenum glFormat = texture->getGLFormat(format);
+
+    glTexImage2DMultisample(texture->m_Target,
+                            samples,
+                            internalFormat,
+                            width,
+                            height,
+                            GL_TRUE);
+
+    Texture::unbind();
+
+    texture->setState(ResourceState::Loaded);
+    size_t channels = static_cast<size_t>(std::max(1, texture->m_Channels));
+    texture->setSize(static_cast<size_t>(width) * static_cast<size_t>(height) * channels);
 
     return texture;
 }

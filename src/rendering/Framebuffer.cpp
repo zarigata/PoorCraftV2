@@ -1,6 +1,4 @@
-#include "poorcraft/rendering/Framebuffer.h"
-
-#include <array>
+#include "poorcraft/rendering/GPUCapabilities.h"
 
 #include "poorcraft/core/Logger.h"
 
@@ -21,6 +19,21 @@ bool Framebuffer::create() {
         return false;
     }
 
+    // Check if MSAA is requested and clamp to hardware limits
+    int clampedSamples = m_Spec.samples;
+    if (clampedSamples > 1) {
+        int maxSamples = GPUCapabilities::getInstance().getMaxSamples();
+        if (maxSamples > 0) {
+            clampedSamples = std::min(clampedSamples, maxSamples);
+            if (clampedSamples != m_Spec.samples) {
+                PC_WARN("Framebuffer samples clamped from " + std::to_string(m_Spec.samples) + " to " + std::to_string(clampedSamples));
+            }
+        } else {
+            PC_WARN("MSAA requested but no multisample support detected, disabling MSAA");
+            clampedSamples = 1;
+        }
+    }
+
     glGenFramebuffers(1, &m_FramebufferID);
     glBindFramebuffer(GL_FRAMEBUFFER, m_FramebufferID);
 
@@ -30,7 +43,7 @@ bool Framebuffer::create() {
     uint32_t colorIndex = 0;
     for (AttachmentType type : m_Spec.attachments) {
         if (type == AttachmentType::COLOR) {
-            auto texture = createAttachment(type);
+            auto texture = createAttachment(type, clampedSamples);
             if (!texture) {
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
                 destroy();
@@ -38,13 +51,13 @@ bool Framebuffer::create() {
             }
             glFramebufferTexture2D(GL_FRAMEBUFFER,
                                    static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + colorIndex),
-                                   GL_TEXTURE_2D,
+                                   clampedSamples > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D,
                                    texture->getTextureID(),
                                    0);
             m_ColorAttachments.push_back(texture);
             ++colorIndex;
         } else if (type == AttachmentType::DEPTH) {
-            auto texture = createAttachment(type);
+            auto texture = createAttachment(type, clampedSamples);
             if (!texture) {
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
                 destroy();
@@ -52,12 +65,12 @@ bool Framebuffer::create() {
             }
             glFramebufferTexture2D(GL_FRAMEBUFFER,
                                    GL_DEPTH_ATTACHMENT,
-                                   GL_TEXTURE_2D,
+                                   clampedSamples > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D,
                                    texture->getTextureID(),
                                    0);
             m_DepthAttachment = texture;
         } else if (type == AttachmentType::DEPTH_STENCIL) {
-            auto texture = createAttachment(type);
+            auto texture = createAttachment(type, clampedSamples);
             if (!texture) {
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
                 destroy();
@@ -65,7 +78,7 @@ bool Framebuffer::create() {
             }
             glFramebufferTexture2D(GL_FRAMEBUFFER,
                                    GL_DEPTH_STENCIL_ATTACHMENT,
-                                   GL_TEXTURE_2D,
+                                   clampedSamples > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D,
                                    texture->getTextureID(),
                                    0);
             m_DepthAttachment = texture;
@@ -94,10 +107,11 @@ bool Framebuffer::create() {
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    PC_INFOF("Framebuffer created (ID: %u, %ux%u, color attachments: %zu)",
+    PC_INFOF("Framebuffer created (ID: %u, %ux%u, samples: %d, color attachments: %zu)",
              m_FramebufferID,
              m_Spec.width,
              m_Spec.height,
+             clampedSamples,
              m_ColorAttachments.size());
 
     return true;
@@ -162,7 +176,7 @@ const FramebufferSpec& Framebuffer::getSpecification() const {
     return m_Spec;
 }
 
-std::shared_ptr<Texture> Framebuffer::createAttachment(AttachmentType type) const {
+std::shared_ptr<Texture> Framebuffer::createAttachment(AttachmentType type, int samples) const {
     TextureFormat format = TextureFormat::RGBA;
     if (type == AttachmentType::DEPTH) {
         format = TextureFormat::DEPTH;
@@ -178,11 +192,19 @@ std::shared_ptr<Texture> Framebuffer::createAttachment(AttachmentType type) cons
     params.wrapS = TextureWrap::CLAMP_TO_EDGE;
     params.wrapT = TextureWrap::CLAMP_TO_EDGE;
 
-    auto texture = Texture::createFromData(static_cast<int>(m_Spec.width),
+    std::shared_ptr<Texture> texture;
+    if (samples > 1) {
+        texture = Texture::createMultisample(static_cast<int>(m_Spec.width),
                                            static_cast<int>(m_Spec.height),
                                            format,
-                                           nullptr,
-                                           params);
+                                           samples);
+    } else {
+        texture = Texture::createFromData(static_cast<int>(m_Spec.width),
+                                         static_cast<int>(m_Spec.height),
+                                         format,
+                                         nullptr,
+                                         params);
+    }
 
     if (!texture) {
         PC_ERROR("Failed to create framebuffer attachment texture");

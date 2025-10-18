@@ -22,6 +22,7 @@ struct FramebufferSpec {
     int samples = 1;
     std::vector<AttachmentType> attachments;
     bool swapChainTarget = false;
+    bool useMultisample = false;
 };
 
 class Framebuffer {
