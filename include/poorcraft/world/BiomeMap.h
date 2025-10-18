@@ -2,6 +2,7 @@
 
 #include "poorcraft/world/BiomeType.h"
 
+#include <array>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -22,18 +23,29 @@ public:
     [[nodiscard]] BiomeType getBiomeAt(int32_t worldX, int32_t worldZ) const;
     [[nodiscard]] float getTemperature(int32_t worldX, int32_t worldZ) const;
     [[nodiscard]] float getHumidity(int32_t worldX, int32_t worldZ) const;
+    [[nodiscard]] float getElevation(int32_t worldX, int32_t worldZ) const;
     [[nodiscard]] std::vector<std::pair<BiomeType, float>> getBlendedBiomes(int32_t worldX, int32_t worldZ) const;
 
     void setBiomeScale(float scale);
 
 private:
-    [[nodiscard]] BiomeType selectBiome(float temperature, float humidity) const;
+    [[nodiscard]] BiomeType selectBiome(float temperature, float humidity, float elevation) const;
+    [[nodiscard]] float sampleCellValue(float worldX, float worldZ) const;
+    [[nodiscard]] float sampleCellDistance(float worldX, float worldZ) const;
+    [[nodiscard]] float sampleTemperature(float worldX, float worldZ) const;
+    [[nodiscard]] float sampleHumidity(float worldX, float worldZ) const;
+    [[nodiscard]] float sampleElevation(float worldX, float worldZ) const;
+    [[nodiscard]] BiomeType computeBiomeForPosition(float worldX, float worldZ) const;
+    [[nodiscard]] int32_t cellValueToId(float cellValue) const;
 
     int64_t seed;
     FastNoiseLite temperatureNoise;
     FastNoiseLite humidityNoise;
-    FastNoiseLite biomeNoise;
+    FastNoiseLite biomeCellNoise;
+    FastNoiseLite biomeDistanceNoise;
+    FastNoiseLite elevationNoise;
     float biomeScale;
+    float biomeFrequency;
 };
 
 } // namespace PoorCraft

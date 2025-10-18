@@ -6,6 +6,7 @@
 
 #include <FastNoiseLite.h>
 
+#include <array>
 #include <cstdint>
 
 namespace PoorCraft {
@@ -43,6 +44,9 @@ private:
     float caveDensity;
     float oreFrequency;
     float treeDensity;
+    std::array<float, 4> oreThresholds;
+    int oreAttemptsPerChunk;
+    int oreClusterSize;
 };
 
 } // namespace PoorCraft

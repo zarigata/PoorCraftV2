@@ -32,7 +32,7 @@ PoorCraft/
 │   └── stb/                    # Single-file libraries
 ├── assets/                     # Game resources
 ├── shaders/                    # GLSL shader files
-└── docs/                       # Documentation
+└── docs/                       # Documentation (API, architecture, build guides)
 ```
 
 ## Core Design Principles
@@ -195,45 +195,37 @@ The engine is designed with clear module boundaries:
 - **Material flags**: `isSolid`, `isOpaque`, `isTransparent`, `lightEmission`, and `hardness` prepare for collision, lighting, and mining systems.
 - **Default set**: AIR, STONE, DIRT, GRASS, SAND, WATER registered during engine boot.
 
-#### Chunk System
-**Purpose**: Store block data and provide cache-friendly access.
+#### Terrain Pipeline
+**Purpose**: Generate rich overworld terrain using noise-driven biomes, heightmaps, caves, ores, and structures.
 
-**Components**:
-- `ChunkCoord` for spatial hashing and world/ chunk conversions.
-- `Chunk` class storing a `16×16×256` array of block IDs.
+**Noise Stack**:
+- `TerrainGenerator::terrainNoise` (OpenSimplex FBm) sets macro elevation.
+- `detailNoise` (Perlin FBm) adds small-scale perturbations.
+- `BiomeMap` samples temperature, humidity, and elevation fields to select `BiomeType`.
+- `caveNoise` (Ridged Simplex) punches underground cavities based on `World.cave_density`.
+- `oreNoise` (Cellular) drives ore cluster attempts configurable via `World.ore_*` keys.
 
-**Key Features**:
-- **Linear storage**: `std::array<uint16_t, 65'536>` for CPU cache efficiency.
-- **Dirty tracking**: Chunks mark themselves dirty when blocks change to trigger remeshing.
-- **Block count cache**: Fast `isEmpty()` checks to skip useless meshes.
-- **Safe accessors**: Bounds-checked helper for defensive reads.
+**Biome Selection & Blending**:
+- `BiomeMap::getBiomeAt()` returns the dominant biome for a column.
+- `getBlendedBiomes()` provides weights for neighboring cells; `TerrainGenerator::generateTerrain()` uses a deterministic hash to dither the top block between the two highest weights when their difference ≤ 0.15.
+- `BiomeDefinition` supplies `surfaceBlock`, `subsurfaceBlock`, `undergroundBlock`, tree/grass chances, and `specialFeatures` such as `BiomeFeature::FLOWERS`.
 
-#### Chunk Meshing
-**Purpose**: Convert voxel data into optimized GPU geometry.
+**Heightmap Generation**:
+- `TerrainGenerator::getBlendedHeight()` integrates noise output and biome heights, clamped to chunk limits.
+- Bedrock occupies `y=0`; underground/subsurface/surface blocks are layered based on biome definition.
 
-**Components**:
-- `ChunkMesh` (`include/poorcraft/world/ChunkMesh.h`)
-- `VertexArray` abstraction for uploading buffers.
+**Caves & Ores**:
+- Caves carve through solid blocks when noise falls below a threshold derived from `World.cave_density`; lava fills cavities below `y=10`.
+- Ore generation uses per-ore thresholds (`World.ore_coal_threshold`, etc.), frequency (`World.ore_frequency`), attempts (`World.ore_attempts_per_chunk`), and cluster size (`World.ore_cluster_size`); candidates sample `oreNoise`, then stamp clusters into stone or sandstone.
 
-**Key Features**:
-- **Greedy meshing**: Merges coplanar faces, reducing vertices by ~80% over naive meshing.
-- **Atlas integration**: Fetches UVs from the block texture atlas for each face.
-- **Face culling**: Skips faces adjacent to opaque neighbors across chunk boundaries.
-- **Stats**: Exposes vertex/index counts for profiling.
+**Structure Placement**:
+- `StructureGenerator` executes after terrain filling, seeded per chunk to keep deterministic distribution.
+- Tree spawn chance uses biome `treeChance` scaled by `World.tree_density`; decoration chance reuses biome `grassChance` for tall grass and flowers.
+- `placeFlower()` consumes the new `flower` block and texture to decorate Plains/Mountains; cacti remain desert-specific.
 
-#### Chunk Management
-**Purpose**: Stream chunks in/out of memory and manage mesh rebuilds.
-
-**Components**:
-- `ChunkManager` (`include/poorcraft/world/ChunkManager.h`)
-- Generation queue (chunks awaiting population).
-- Meshing queue (chunks awaiting mesh rebuild).
-
-**Key Features**:
-- **Streaming radius**: Driven by `Gameplay.render_distance` and configurable margins.
-- **Per-frame budgets**: Configurable generation/meshing limits smooth out spikes.
-- **Procedural placeholder**: Flat world terrain (stone/dirt/grass) pending full terrain pipeline.
-- **Spatial hashing**: `std::unordered_map<ChunkCoord, ...>` for fast lookups.
+**Integration**:
+- `TerrainGenerator::generateChunk()` orchestrates terrain, caves, ores, and structures per chunk.
+- `ChunkManager` schedules generation/meshing jobs; meshes fetch UVs from `World::createBlockTextureAtlas()` (now including `flower`, `tall_grass`, ores, logs/leaves, etc.).
 
 #### Frustum Culling
 **Purpose**: Avoid rendering chunks outside the camera frustum.

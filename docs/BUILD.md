@@ -40,7 +40,7 @@ git submodule update --init --recursive
 
 ### Setting Up Dependencies
 
-PoorCraft requires GLFW, GLM, GLAD, and stb_image. You can set these up automatically using the provided scripts:
+PoorCraft requires GLFW, GLM, GLAD, stb_image, and FastNoiseLite. You can set these up automatically using the provided scripts:
 
 **Linux/macOS:**
 ```bash
@@ -79,6 +79,8 @@ If you prefer not to use the setup scripts:
 
 4. **stb_image**: Download `stb_image.h` from https://github.com/nothings/stb
    - Place in `libs/stb/stb_image.h`
+
+5. **FastNoiseLite**: The single-header library is vendored under `libs/FastNoiseLite/`; ensure the submodule (or downloaded copy) is present when cloning.
 
 ## Platform-Specific Setup
 
@@ -456,10 +458,13 @@ The `assets/` directory contains the following subdirectories:
 | Path | Description |
 |------|-------------|
 | `assets/fonts/` | Font files |
-| `assets/textures/blocks/` | 16×16 block textures packed into the world atlas (stone, dirt, grass, sand, water) |
+| `assets/textures/blocks/` | Block textures (stone, dirt, grass, snow, ice, logs, leaves, cactus, sandstone, bedrock, ores, tall_grass, vines, lava, flower) |
 
 ## Performance Notes
 
 - **Render distance** (`Gameplay.render_distance` in `config.ini`) controls how many chunk rings are loaded.
 - **Chunk streaming budgets** (`World.chunk_generation_per_frame`, `World.chunk_meshing_per_frame`) balance responsiveness vs. frame time.
 - **Greedy meshing** and frustum culling dramatically reduce draw calls, but profiling is advised when changing atlas or block sets.
+
+```bash
+├── libs/                       # Submodules (GLFW, GLAD, GLM, stb, FastNoiseLite)

@@ -217,6 +217,14 @@ void BlockRegistry::initialize() {
                       .setHardness(0.0f));
 
     registerBlock(BlockType()
+                      .setName("flower")
+                      .setSolid(false)
+                      .setOpaque(false)
+                      .setTransparent(true)
+                      .setTextureAllFaces("flower")
+                      .setHardness(0.0f));
+
+    registerBlock(BlockType()
                       .setName("vines")
                       .setSolid(false)
                       .setOpaque(false)

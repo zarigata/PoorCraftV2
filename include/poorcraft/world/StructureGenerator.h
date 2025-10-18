@@ -28,6 +28,7 @@ public:
     void placeTree(Chunk& chunk, int x, int y, int z, BiomeType biome);
     void placeCactus(Chunk& chunk, int x, int y, int z);
     void placeTallGrass(Chunk& chunk, int x, int y, int z);
+    void placeFlower(Chunk& chunk, int x, int y, int z);
 
 private:
     [[nodiscard]] bool canPlaceStructure(const Chunk& chunk, int x, int y, int z, StructureType type) const;

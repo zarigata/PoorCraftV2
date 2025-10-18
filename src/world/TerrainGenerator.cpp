@@ -10,6 +10,7 @@
 #include <array>
 #include <cmath>
 #include <random>
+#include <limits>
 
 namespace PoorCraft {
 namespace {
@@ -49,7 +50,8 @@ struct OreDefinition {
 
 TerrainGenerator::TerrainGenerator(int64_t seedValue)
     : seed(seedValue), biomeMap(seedValue), terrainNoise(), detailNoise(), caveNoise(), oreNoise(),
-      caveDensity(0.5f), oreFrequency(1.0f), treeDensity(1.0f) {}
+      caveDensity(0.5f), oreFrequency(1.0f), treeDensity(1.0f),
+      oreThresholds{0.4f, 0.55f, 0.65f, 0.75f}, oreAttemptsPerChunk(24), oreClusterSize(5) {}
 
 void TerrainGenerator::initialize() {
     auto& config = poorcraft::Config::get_instance();
@@ -81,7 +83,17 @@ void TerrainGenerator::initialize() {
 
     oreNoise.SetSeed(static_cast<int32_t>(seed + 300));
     oreNoise.SetNoiseType(FastNoiseLite::NoiseType_Cellular);
-    oreNoise.SetFrequency(0.05f);
+
+    const float oreNoiseFrequency = std::max(0.0001f, config.get_float("World.ore_noise_frequency", 0.02f));
+    oreNoise.SetFrequency(oreNoiseFrequency);
+
+    oreThresholds[0] = std::clamp(config.get_float("World.ore_coal_threshold", oreThresholds[0]), -1.0f, 1.0f);
+    oreThresholds[1] = std::clamp(config.get_float("World.ore_iron_threshold", oreThresholds[1]), -1.0f, 1.0f);
+    oreThresholds[2] = std::clamp(config.get_float("World.ore_gold_threshold", oreThresholds[2]), -1.0f, 1.0f);
+    oreThresholds[3] = std::clamp(config.get_float("World.ore_diamond_threshold", oreThresholds[3]), -1.0f, 1.0f);
+
+    oreAttemptsPerChunk = std::max(0, config.get_int("World.ore_attempts_per_chunk", oreAttemptsPerChunk));
+    oreClusterSize = std::max(1, config.get_int("World.ore_cluster_size", oreClusterSize));
 
     PC_INFO("TerrainGenerator initialized with seed " + std::to_string(seed));
 }
@@ -145,9 +157,31 @@ void TerrainGenerator::generateTerrain(Chunk& chunk, const ChunkCoord& coord) {
 
             const int height = getBlendedHeight(worldX, worldZ);
             const BiomeType biome = biomeMap.getBiomeAt(worldX, worldZ);
-            const auto& definition = getBiomeDefinition(biome);
+            const auto blends = biomeMap.getBlendedBiomes(worldX, worldZ);
 
-            const uint16_t surfaceId = resolveBlock(definition.surfaceBlock, defaultStone);
+            BiomeType surfaceBiome = biome;
+            if (!blends.empty()) {
+                surfaceBiome = blends.front().first;
+                if (blends.size() >= 2) {
+                    const auto [b0, w0] = blends[0];
+                    const auto [b1, w1] = blends[1];
+                    if (std::fabs(w0 - w1) <= 0.15f) {
+                        const float totalWeight = w0 + w1;
+                        if (totalWeight > 0.0f) {
+                            const uint32_t blendHash = hashCoordinates(seed + 0x9E3779B9, worldX, worldZ);
+                            const float noiseValue = static_cast<float>(blendHash) /
+                                                     static_cast<float>(std::numeric_limits<uint32_t>::max());
+                            const float threshold = w0 / totalWeight;
+                            surfaceBiome = noiseValue < threshold ? b0 : b1;
+                        }
+                    }
+                }
+            }
+
+            const auto& definition = getBiomeDefinition(biome);
+            const auto& surfaceDefinition = getBiomeDefinition(surfaceBiome);
+
+            const uint16_t surfaceId = resolveBlock(surfaceDefinition.surfaceBlock, defaultStone);
             const uint16_t subsurfaceId = resolveBlock(definition.subsurfaceBlock, defaultStone);
             const uint16_t undergroundId = resolveBlock(definition.undergroundBlock, defaultStone);
 
@@ -208,49 +242,61 @@ void TerrainGenerator::generateOres(Chunk& chunk, const ChunkCoord& coord) {
     const uint16_t sandstoneId = registry.getBlockID("sandstone");
 
     std::array<OreDefinition, 4> ores = {
-        OreDefinition{"coal_ore", 5, 128, 0.4f, registry.getBlockID("coal_ore")},
-        OreDefinition{"iron_ore", 5, 64, 0.55f, registry.getBlockID("iron_ore")},
-        OreDefinition{"gold_ore", 5, 32, 0.65f, registry.getBlockID("gold_ore")},
-        OreDefinition{"diamond_ore", 5, 16, 0.75f, registry.getBlockID("diamond_ore")}
+        OreDefinition{"coal_ore", 5, 128, oreThresholds[0], registry.getBlockID("coal_ore")},
+        OreDefinition{"iron_ore", 5, 64, oreThresholds[1], registry.getBlockID("iron_ore")},
+        OreDefinition{"gold_ore", 5, 32, oreThresholds[2], registry.getBlockID("gold_ore")},
+        OreDefinition{"diamond_ore", 5, 16, oreThresholds[3], registry.getBlockID("diamond_ore")}
     };
 
-    for (int localZ = 0; localZ < Chunk::CHUNK_SIZE_Z; ++localZ) {
-        for (int localX = 0; localX < Chunk::CHUNK_SIZE_X; ++localX) {
+    std::minstd_rand rng(hashCoordinates(seed + 0xC13FA9A9, coord.x, coord.z));
+    std::uniform_int_distribution<int> xDist(0, Chunk::CHUNK_SIZE_X - 1);
+    std::uniform_int_distribution<int> zDist(0, Chunk::CHUNK_SIZE_Z - 1);
+    std::uniform_int_distribution<int> offsetDist(-1, 1);
+
+    const int attemptsBase = std::max(0, static_cast<int>(std::round(oreAttemptsPerChunk * oreFrequency)));
+
+    for (auto& ore : ores) {
+        if (ore.blockId == 0) {
+            continue;
+        }
+
+        const int minY = std::clamp(ore.minY, 1, Chunk::CHUNK_SIZE_Y - 1);
+        const int maxY = std::clamp(ore.maxY, 1, Chunk::CHUNK_SIZE_Y - 1);
+        if (minY > maxY) {
+            continue;
+        }
+
+        std::uniform_int_distribution<int> yDist(minY, maxY);
+        const float adjustedThreshold = std::clamp(ore.threshold - (oreFrequency - 1.0f) * 0.1f, -1.0f, 0.99f);
+
+        for (int attempt = 0; attempt < attemptsBase; ++attempt) {
+            const int localX = xDist(rng);
+            const int localZ = zDist(rng);
+            const int localY = yDist(rng);
+
             const int32_t worldX = coord.x * Chunk::CHUNK_SIZE_X + localX;
             const int32_t worldZ = coord.z * Chunk::CHUNK_SIZE_Z + localZ;
+            const float noise = oreNoise.GetNoise(static_cast<float>(worldX), static_cast<float>(localY), static_cast<float>(worldZ));
+            if (noise <= adjustedThreshold) {
+                continue;
+            }
 
-            for (auto& ore : ores) {
-                if (ore.blockId == 0) {
-                    continue;
+            auto tryPlaceOre = [&](int px, int py, int pz) {
+                if (px < 0 || px >= Chunk::CHUNK_SIZE_X || pz < 0 || pz >= Chunk::CHUNK_SIZE_Z || py < 0 || py >= Chunk::CHUNK_SIZE_Y) {
+                    return;
                 }
-
-                const float adjustedThreshold = std::clamp(ore.threshold - (oreFrequency - 1.0f) * 0.1f, -1.0f, 0.95f);
-
-                for (int localY = ore.minY; localY <= ore.maxY && localY < Chunk::CHUNK_SIZE_Y; ++localY) {
-                    const float noise = oreNoise.GetNoise(static_cast<float>(worldX), static_cast<float>(localY), static_cast<float>(worldZ));
-                    if (noise <= adjustedThreshold) {
-                        continue;
-                    }
-
-                    for (int dx = 0; dx < 2; ++dx) {
-                        for (int dy = 0; dy < 2; ++dy) {
-                            for (int dz = 0; dz < 2; ++dz) {
-                                const int nx = localX + dx;
-                                const int ny = localY + dy;
-                                const int nz = localZ + dz;
-
-                                if (nx >= Chunk::CHUNK_SIZE_X || ny >= Chunk::CHUNK_SIZE_Y || nz >= Chunk::CHUNK_SIZE_Z) {
-                                    continue;
-                                }
-
-                                const uint16_t current = chunk.getBlock(nx, ny, nz);
-                                if (current == stoneId || current == sandstoneId) {
-                                    chunk.setBlock(nx, ny, nz, ore.blockId);
-                                }
-                            }
-                        }
-                    }
+                const uint16_t current = chunk.getBlock(px, py, pz);
+                if (current == stoneId || current == sandstoneId) {
+                    chunk.setBlock(px, py, pz, ore.blockId);
                 }
+            };
+
+            tryPlaceOre(localX, localY, localZ);
+            for (int clusterIndex = 1; clusterIndex < oreClusterSize; ++clusterIndex) {
+                const int cx = localX + offsetDist(rng);
+                const int cy = localY + offsetDist(rng);
+                const int cz = localZ + offsetDist(rng);
+                tryPlaceOre(cx, cy, cz);
             }
         }
     }
@@ -300,6 +346,9 @@ void TerrainGenerator::placeStructures(Chunk& chunk, const ChunkCoord& coord) {
                     break;
                 case BiomeFeature::TALL_GRASS:
                     structureGenerator.placeTallGrass(chunk, localX, topY, localZ);
+                    break;
+                case BiomeFeature::FLOWERS:
+                    structureGenerator.placeFlower(chunk, localX, topY, localZ);
                     break;
                 default:
                     break;

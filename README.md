@@ -19,10 +19,10 @@ PoorCraft is an open-source Minecraft clone built from the ground up with modern
 - **Comprehensive logging** system with file output
 - **Configuration management** with INI file support
 - **Platform abstraction** layer for OS-specific operations
+- **Noise-driven world generation** featuring five biomes, biome blending, caves, ores, trees, cactus, tall grass, and flowers
 
 ### Planned Features
 - **Modern OpenGL rendering pipeline** with GLSL shaders
-- **Voxel-based world generation** with multiple biomes
 - **32x32 pixel art skin system** for character customization
 - **Multiplayer networking** infrastructure
 - **Modding API** for community content
@@ -160,7 +160,8 @@ PoorCraft/
 │   ├── glfw/              # Window and input management
 │   ├── glad/              # OpenGL function loader
 │   ├── glm/               # OpenGL Mathematics
-│   ├── stb/               # Single-file libraries
+│   ├── stb/               # Image loading utilities
+│   ├── FastNoiseLite/     # Noise generation library
 │   └── CMakeLists.txt     # Dependencies CMake config
 ├── assets/                # Game resources
 │   ├── textures/          # Block and entity textures
@@ -193,6 +194,7 @@ PoorCraft uses the following third-party libraries:
 - **[GLAD](https://glad.dav1d.de/)** - OpenGL 4.6 Core function loading (generated)
 - **[GLM](https://github.com/g-truc/glm)** - OpenGL Mathematics library (Git submodule)
 - **[stb_image](https://github.com/nothings/stb)** - Image loading library (downloaded)
+- **[FastNoiseLite](https://github.com/Auburn/FastNoiseLite)** - Deterministic noise generation (vendored)
 
 GLFW and GLM are included as Git submodules. GLAD files need to be generated from https://glad.dav1d.de/ with OpenGL 4.6 Core profile, and stb_image.h needs to be downloaded. Use the provided `setup_dependencies` scripts to automate this process.
 
@@ -230,6 +232,24 @@ log_level=info
 max_fps=144
 ```
 
+## 🌍 World Generation
+
+PoorCraft ships with a fully procedural overworld powered by FastNoiseLite:
+
+- **Biomes**: Plains, Mountains, Snow, Desert, and Jungle each provide distinct surface blocks, vegetation, and features.
+- **Blending**: Neighboring biome weights are dithered for mottled transitions at borders.
+- **Terrain**: Layered heightmaps create rolling hills and cliffs, undercut by noise-driven caves.
+- **Decorations**: Trees, cactus, tall grass, and flowers spawn deterministically based on biome definitions.
+- **Ores**: Coal, iron, gold, and diamond veins generate via configurable clustered attempts.
+
+Tune generation with the `[World]` section of `config.ini`:
+
+- `world_seed`
+- `biome_scale`
+- `cave_density`
+- `ore_frequency`
+- `tree_density`
+
 ## 🛠️ Development
 
 ### Current Status
@@ -246,8 +266,8 @@ max_fps=144
 **Next Steps:**
 - 🔲 OpenGL rendering pipeline
 - 🔲 Shader system
-- 🔲 World/chunk system
-- 🔲 Terrain generation
+- 🔲 Networking and multiplayer systems
+- 🔲 Modding hooks and scripting
 
 ### Building from Source
 

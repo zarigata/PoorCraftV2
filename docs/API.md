@@ -14,6 +14,7 @@ This document provides comprehensive API reference for the core systems in the P
 - [Resource Management API](#resource-management-api)
 - [World & Chunk System API](#world--chunk-system-api)
 - [Memory Management API](#memory-management-api)
+- [Terrain Generation System](#terrain-generation-system)
 
 ## Logger API
 
@@ -1623,6 +1624,55 @@ world->shutdown();
 - `World.chunk_unload_margin` — extra chunks beyond render distance before unloading (default `2`).
 
 Tune these values to balance streaming responsiveness and performance.
+
+## Terrain Generation System
+
+The terrain subsystem combines biome sampling, heightmap calculation, underground carving, ore placement, and surface structures.
+
+### Biome Definitions (`include/poorcraft/world/BiomeType.h`)
+
+- `BiomeType` enumerates built-in biomes (`PLAINS`, `MOUNTAINS`, `SNOW`, `DESERT`, `JUNGLE`).
+- `BiomeDefinition` describes per-biome heights, surface/subsurface/underground blocks, spawn chances, and `specialFeatures` like `BiomeFeature::FLOWERS`.
+- Retrieve definitions with `PoorCraft::getBiomeDefinition(biome)`.
+
+```cpp
+const auto& def = PoorCraft::getBiomeDefinition(PoorCraft::BiomeType::PLAINS);
+float treeChance = def.treeChance;
+```
+
+### BiomeMap (`include/poorcraft/world/BiomeMap.h`)
+
+- `BiomeType getBiomeAt(int32_t worldX, int32_t worldZ) const` returns the dominant biome.
+- `std::vector<std::pair<BiomeType, float>> getBlendedBiomes(int32_t worldX, int32_t worldZ) const` exposes neighboring weights for border blending.
+- `void setBiomeScale(float scale)` rebiases temperature/humidity/elevation frequencies.
+
+### TerrainGenerator (`include/poorcraft/world/TerrainGenerator.h`)
+
+- `void initialize()` seeds noise modules and reads configuration.
+- `void generateChunk(Chunk& chunk, const ChunkCoord& coord)` performs layered terrain fill, caves, ores, and structures.
+- `int getBlendedHeight(int32_t worldX, int32_t worldZ) const` averages biome heights.
+- Surface blending uses the top two weights when `|w0 - w1| <= 0.15f`, selecting a biome via deterministic hash.
+
+Key config keys under `[World]` (`config.ini`):
+
+- `world_seed`
+- `biome_scale`
+- `cave_density`
+- `ore_frequency`
+- `tree_density`
+- `ore_noise_frequency`
+- `ore_coal_threshold`
+- `ore_iron_threshold`
+- `ore_gold_threshold`
+- `ore_diamond_threshold`
+- `ore_attempts_per_chunk`
+- `ore_cluster_size`
+
+### StructureGenerator (`include/poorcraft/world/StructureGenerator.h`)
+
+- `placeTree` spawns biome-appropriate logs/leaves with deterministic heights.
+- `placeCactus`, `placeTallGrass`, and `placeFlower` handle desert/prarie foliage, respecting `canPlaceStructure()` ground checks.
+- Flowers use the new `flower` block and texture; generation is gated by biome `grassChance` until a dedicated `flowerChance` exists.
 
 ## Memory Management API
 

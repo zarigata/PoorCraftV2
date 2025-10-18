@@ -70,6 +70,9 @@ void StructureGenerator::placeCactus(Chunk& chunk, int x, int y, int z) {
         if (!isWithinChunk(x, ny, z)) {
             break;
         }
+        if (!hasAirAround(chunk, x, ny, z)) {
+            break;
+        }
         chunk.setBlock(x, ny, z, cactusId);
     }
 }
@@ -87,6 +90,25 @@ void StructureGenerator::placeTallGrass(Chunk& chunk, int x, int y, int z) {
     const uint16_t tallGrassId = registry.getBlockID("tall_grass");
 
     chunk.setBlock(x, y + 1, z, tallGrassId);
+}
+
+void StructureGenerator::placeFlower(Chunk& chunk, int x, int y, int z) {
+    if (!isWithinChunk(x, y, z) || !isWithinChunk(x, y + 1, z)) {
+        return;
+    }
+
+    if (!canPlaceStructure(chunk, x, y, z, StructureType::FLOWER)) {
+        return;
+    }
+
+    auto& registry = BlockRegistry::getInstance();
+    const uint16_t flowerId = registry.getBlockID("flower");
+
+    if (flowerId == 0) {
+        return;
+    }
+
+    chunk.setBlock(x, y + 1, z, flowerId);
 }
 
 bool StructureGenerator::canPlaceStructure(const Chunk& chunk, int x, int y, int z, StructureType type) const {
@@ -132,15 +154,15 @@ bool StructureGenerator::canPlaceStructure(const Chunk& chunk, int x, int y, int
         if (groundBlock != sandId) {
             return false;
         }
-        if (!hasAirAround(chunk, x, y + 1, z)) {
-            return false;
-        }
         return true;
     }
     case StructureType::TALL_GRASS:
     case StructureType::FLOWER: {
         const uint16_t grassId = registry.getBlockID("grass");
-        if (groundBlock != grassId) {
+        const uint16_t snowGrassId = registry.getBlockID("snow_grass");
+        const uint16_t dirtId = registry.getBlockID("dirt");
+        bool validGround = groundBlock == grassId || groundBlock == snowGrassId || groundBlock == dirtId;
+        if (!validGround) {
             return false;
         }
         if (chunk.getBlock(x, y + 1, z) != 0) {

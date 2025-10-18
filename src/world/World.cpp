@@ -169,6 +169,7 @@ std::unique_ptr<TextureAtlas> World::createBlockTextureAtlas() {
         {"gold_ore", basePath + "gold_ore.png"},
         {"diamond_ore", basePath + "diamond_ore.png"},
         {"tall_grass", basePath + "tall_grass.png"},
+        {"flower", basePath + "flower.png"},
         {"vines", basePath + "vines.png"},
         {"lava", basePath + "lava.png"},
     };
