@@ -16,6 +16,7 @@ BlockRegistry::BlockRegistry()
         .setSolid(false)
         .setOpaque(false)
         .setTransparent(true)
+        .setLiquid(false)
         .setTextureAllFaces("")
         .setLightEmission(0)
         .setHardness(0.0f);
@@ -77,6 +78,7 @@ void BlockRegistry::initialize() {
                       .setSolid(false)
                       .setOpaque(false)
                       .setTransparent(true)
+                      .setLiquid(true)
                       .setTextureAllFaces("water")
                       .setHardness(100.0f));
 
@@ -237,6 +239,7 @@ void BlockRegistry::initialize() {
                       .setSolid(false)
                       .setOpaque(false)
                       .setTransparent(true)
+                      .setLiquid(true)
                       .setTextureAllFaces("lava")
                       .setLightEmission(15)
                       .setHardness(100.0f));
@@ -290,6 +293,17 @@ const BlockType& BlockRegistry::getBlock(uint16_t id) const {
     }
 
     PC_WARN("Requested block ID " + std::to_string(id) + " not found. Returning AIR.");
+    return airBlock;
+}
+
+const BlockType& BlockRegistry::getBlockType(uint16_t id) const {
+    std::scoped_lock lock(mutex);
+
+    auto it = blocks.find(id);
+    if (it != blocks.end()) {
+        return it->second;
+    }
+
     return airBlock;
 }
 

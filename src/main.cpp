@@ -12,9 +12,21 @@
 #include "poorcraft/rendering/Shader.h"
 #include "poorcraft/rendering/Texture.h"
 #include "poorcraft/world/World.h"
+#include "poorcraft/entity/EntityManager.h"
+#include "poorcraft/entity/components/Transform.h"
+#include "poorcraft/entity/components/PlayerController.h"
+#include "poorcraft/entity/components/Renderable.h"
+#include "poorcraft/entity/components/AnimationController.h"
+#include "poorcraft/entity/systems/AnimationSystem.h"
+#include "poorcraft/entity/systems/EntityRenderer.h"
+#include "poorcraft/entity/HumanoidMesh.h"
+#include "poorcraft/entity/PlayerSkin.h"
 #include "poorcraft/physics/Player.h"
 #include <glm/glm.hpp>
 #include <glm/gtx/norm.hpp>
+#include <algorithm>
+#include <stdexcept>
+#include <vector>
 #include <cmath>
 #if defined(__has_include)
 #if __has_include("poorcraft/rendering/DebugRenderer.h")
@@ -228,16 +240,74 @@ int main(int argc, char* argv[]) {
 
         auto physicsWorld = std::make_shared<PoorCraft::PhysicsWorld>(*world);
         auto cameraPtr = std::shared_ptr<PoorCraft::Camera>(&camera, [](PoorCraft::Camera*) {});
-        auto player = std::make_unique<PoorCraft::Player>(physicsWorld, cameraPtr);
-        player->setPosition(glm::vec3(0.0f, 70.0f, 0.0f));
+
+        auto& entityManager = PoorCraft::EntityManager::getInstance();
+        PoorCraft::AnimationSystem animationSystem(entityManager);
+        PoorCraft::EntityRenderer entityRenderer(entityManager);
+
+        auto playerSkinHandle = PoorCraft::ResourceManager::getInstance().load<PoorCraft::PlayerSkin>("assets/skins/player.png");
+        if (!playerSkinHandle.isValid()) {
+            PC_WARN("Failed to load player skin, using default texture");
+        }
+
+        auto playerMeshData = PoorCraft::HumanoidMesh::generate(playerSkinHandle.isValid() ? playerSkinHandle.get() : nullptr);
+        if (!playerMeshData.mesh) {
+            throw std::runtime_error("Failed to generate humanoid mesh for player entity");
+        }
+
+        std::shared_ptr<PoorCraft::Texture> playerTexture;
+        if (playerSkinHandle && playerSkinHandle->getTexture()) {
+            playerTexture = playerSkinHandle->getTexture();
+        } else {
+            playerTexture = PoorCraft::Renderer::getInstance().getDefaultTexture();
+        }
+
+        auto& playerEntity = entityManager.createEntity("Player");
+        auto& playerTransform = playerEntity.addComponent<PoorCraft::Transform>();
+        playerTransform.setPosition(glm::vec3(0.0f, 70.0f, 0.0f));
+        playerTransform.updatePrevious();
+
+        auto& playerControllerComponent = playerEntity.addComponent<PoorCraft::PlayerController>(physicsWorld, cameraPtr);
+        playerControllerComponent.getPlayer().setPosition(playerTransform.getPosition());
+
+        std::vector<PoorCraft::Renderable::Section> playerSections;
+        playerSections.reserve(playerMeshData.sections.size());
+        for (const auto& section : playerMeshData.sections) {
+            playerSections.push_back({ section.indexOffset, section.indexCount });
+        }
+
+        auto& playerRenderable = playerEntity.addComponent<PoorCraft::Renderable>(playerMeshData.mesh, playerTexture, std::move(playerSections));
+        playerRenderable.setRenderLayer(0);
+
+        playerEntity.addComponent<PoorCraft::AnimationController>();
+
+        auto* playerControllerPtr = playerEntity.getComponent<PoorCraft::PlayerController>();
+
+        if (!playerControllerPtr) {
+            PC_FATAL("Failed to initialize player entity components");
+            PoorCraft::Renderer::getInstance().shutdown();
+            window.shutdown();
+            PoorCraft::Window::terminateGLFW();
+            PoorCraft::ResourceManager::getInstance().clear();
+            PoorCraft::EventBus::getInstance().clear();
+            poorcraft::Platform::delete_path(testResourcePath);
+            poorcraft::Config::get_instance().save_to_file();
+            PC_INFO("PoorCraft engine shutdown complete");
+            poorcraft::Logger::get_instance().shutdown();
+            return 1;
+        }
+
+        auto& playerController = *playerControllerPtr;
 
 #if POORCRAFT_HAS_DEBUG_RENDERER
         bool debugEnabled = false;
 #endif
 
-        // Set update callback with player-driven movement
+        // Set update callback with ECS-driven player
         gameLoop.setUpdateCallback([&](float deltaTime) {
             auto& input = PoorCraft::Input::getInstance();
+
+            playerTransform.updatePrevious();
 
             glm::vec3 wishDirection(0.0f);
             if (input.isKeyHeld(GLFW_KEY_W)) {
@@ -253,11 +323,13 @@ int main(int argc, char* argv[]) {
                 wishDirection.x += 1.0f;
             }
 
+            PoorCraft::Player& playerInstance = playerController.getPlayer();
+
             if (glm::length2(wishDirection) > 0.0f) {
                 wishDirection = glm::normalize(wishDirection);
             }
 
-            if (player->isFlying()) {
+            if (playerInstance.isFlying()) {
                 float vertical = 0.0f;
                 if (input.isKeyHeld(GLFW_KEY_SPACE)) {
                     vertical += 1.0f;
@@ -268,13 +340,16 @@ int main(int argc, char* argv[]) {
                 wishDirection.y = vertical;
             }
 
-            bool sprinting = input.isKeyHeld(GLFW_KEY_LEFT_SHIFT) && !player->isFlying();
-            bool jumpRequested = !player->isFlying() && input.wasKeyJustPressed(GLFW_KEY_SPACE);
+            bool sprinting = input.isKeyHeld(GLFW_KEY_LEFT_SHIFT) && !playerInstance.isFlying();
+            bool jumpRequested = !playerInstance.isFlying() && input.wasKeyJustPressed(GLFW_KEY_SPACE);
             bool flyToggle = input.wasKeyJustPressed(GLFW_KEY_F);
             bool swimToggle = false;
 
-            player->handleInput(wishDirection, sprinting, jumpRequested, flyToggle, swimToggle);
-            player->update(deltaTime);
+            playerController.handleInput(wishDirection, sprinting, jumpRequested, flyToggle, swimToggle);
+            playerController.update(deltaTime);
+            playerController.syncTransform(playerTransform);
+
+            animationSystem.update(deltaTime);
 
             float sensitivity = config.get_float(poorcraft::Config::ControlsConfig::MOUSE_SENSITIVITY_KEY, 1.0f) * 0.1f;
             if (input.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
@@ -294,14 +369,14 @@ int main(int argc, char* argv[]) {
             if (debugEnabled) {
                 debugRenderer.clear();
                 debugRenderer.clear();
-                debugRenderer.drawAABB(player->getBounds(), glm::vec3(1.0f, 0.0f, 0.0f));
-                const auto velocity = player->getVelocity();
+                debugRenderer.drawAABB(playerInstance.getBounds(), glm::vec3(1.0f, 0.0f, 0.0f));
+                const auto velocity = playerInstance.getVelocity();
                 const float velocityLengthSq = glm::length2(velocity);
                 if (velocityLengthSq > 0.0f) {
                     const float velocityLength = std::sqrt(velocityLengthSq);
-                    debugRenderer.drawRay(player->getPosition(), glm::normalize(velocity), velocityLength, glm::vec3(0.0f, 0.0f, 1.0f));
+                    debugRenderer.drawRay(playerInstance.getPosition(), glm::normalize(velocity), velocityLength, glm::vec3(0.0f, 0.0f, 1.0f));
                 }
-                const auto target = player->getTargetBlock();
+                const auto target = playerInstance.getTargetBlock();
                 if (target.hit) {
                     auto blockAABB = physicsWorld->getBlockAABB(target.blockPos.x, target.blockPos.y, target.blockPos.z);
                     debugRenderer.drawAABB(blockAABB, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -309,7 +384,7 @@ int main(int argc, char* argv[]) {
             }
 #endif
 
-            world->update(player->getPosition(), renderDistance);
+            world->update(playerTransform.getPosition(), renderDistance);
         });
 
         // Set render callback with renderer API
@@ -347,6 +422,37 @@ int main(int argc, char* argv[]) {
             if (blockShader) {
                 blockShader->bind();
                 world->render(camera, *blockShader);
+            }
+
+            static std::shared_ptr<PoorCraft::Shader> entityShader = nullptr;
+            static bool entityShaderLoaded = false;
+
+            if (!entityShaderLoaded) {
+                try {
+                    entityShader = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Shader>("shaders/basic/entity");
+                    if (!entityShader || !entityShader->isValid()) {
+                        PC_WARN("Failed to load entity shader, using default shader");
+                        entityShader = renderer.getDefaultShader();
+                    } else {
+                        PC_INFO("Successfully loaded entity shader");
+                    }
+                } catch (const std::exception& e) {
+                    PC_ERROR("Error loading entity shader: " + std::string(e.what()));
+                    entityShader = renderer.getDefaultShader();
+                }
+                entityShaderLoaded = true;
+            }
+
+            float alpha = 0.0f;
+            const float fixedTimestep = gameLoop.getFixedTimestep();
+            if (fixedTimestep > 0.0f) {
+                alpha = static_cast<float>(gameLoop.getAccumulator() / fixedTimestep);
+            }
+            alpha = std::clamp(alpha, 0.0f, 1.0f);
+
+            if (entityShader) {
+                entityShader->bind();
+                entityRenderer.render(camera, *entityShader, alpha);
             }
 
 #if POORCRAFT_HAS_DEBUG_RENDERER

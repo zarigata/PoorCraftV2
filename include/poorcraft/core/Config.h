@@ -268,6 +268,21 @@ public:
         static constexpr const char* SECTION = "Network";
         static constexpr const char* DEFAULT_PORT_KEY = "Network.default_port";
         static constexpr const char* TIMEOUT_KEY = "Network.timeout";
+        static constexpr const char* MAX_PLAYERS_KEY = "Network.max_players";
+        static constexpr const char* SERVER_NAME_KEY = "Network.server_name";
+        static constexpr const char* SERVER_DESCRIPTION_KEY = "Network.server_description";
+        static constexpr const char* MAX_CONNECTION_ATTEMPTS_KEY = "Network.max_connection_attempts";
+        static constexpr const char* HANDSHAKE_TIMEOUT_KEY = "Network.handshake_timeout";
+        static constexpr const char* NETWORK_TICK_RATE_KEY = "Network.network_tick_rate";
+        static constexpr const char* SNAPSHOT_RATE_KEY = "Network.snapshot_rate";
+        static constexpr const char* MAX_PACKET_SIZE_KEY = "Network.max_packet_size";
+        static constexpr const char* CHUNK_SEND_RATE_KEY = "Network.chunk_send_rate";
+        static constexpr const char* CHUNK_COMPRESSION_KEY = "Network.chunk_compression";
+        static constexpr const char* ENABLE_PREDICTION_KEY = "Network.enable_prediction";
+        static constexpr const char* PREDICTION_ERROR_THRESHOLD_KEY = "Network.prediction_error_threshold";
+        static constexpr const char* INTERPOLATION_DELAY_KEY = "Network.interpolation_delay";
+        static constexpr const char* MAX_INCOMING_BANDWIDTH_KEY = "Network.max_incoming_bandwidth";
+        static constexpr const char* MAX_OUTGOING_BANDWIDTH_KEY = "Network.max_outgoing_bandwidth";
 
         // Legacy constants for backward compatibility (deprecated)
         static constexpr const char* DEFAULT_PORT = "default_port";

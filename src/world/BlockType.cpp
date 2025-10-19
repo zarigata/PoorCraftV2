@@ -3,7 +3,7 @@
 namespace PoorCraft {
 
 BlockType::BlockType()
-    : id(0), name(), isSolid(true), isOpaque(true), isTransparent(false), textureIndices(),
+    : id(0), name(), isSolid(true), isOpaque(true), isTransparent(false), isLiquid(false), textureIndices(),
       lightEmission(0), hardness(1.0f) {}
 
 BlockType& BlockType::setId(uint16_t newId) {
@@ -28,6 +28,11 @@ BlockType& BlockType::setOpaque(bool opaque) {
 
 BlockType& BlockType::setTransparent(bool transparent) {
     isTransparent = transparent;
+    return *this;
+}
+
+BlockType& BlockType::setLiquid(bool liquid) {
+    isLiquid = liquid;
     return *this;
 }
 

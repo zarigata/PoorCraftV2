@@ -184,6 +184,21 @@ void Player::resolveMovement(float deltaTime) {
 
     CollisionResult result = CollisionDetector::resolveCollision(m_Bounds, displacement, *m_PhysicsWorld);
 
+    if (result.collided && m_MovementController.getMode() != MovementMode::FLYING) {
+        const glm::vec3 horizontalDisplacement(displacement.x, 0.0f, displacement.z);
+        const float horizontalLengthSq = glm::length2(horizontalDisplacement);
+        if (horizontalLengthSq > 0.0f && std::abs(result.normal.y) < 0.5f) {
+            PhysicsAABB stepBounds = m_Bounds;
+            glm::vec3 stepVelocity = horizontalDisplacement;
+            if (CollisionDetector::stepUp(stepBounds, stepVelocity, *m_PhysicsWorld, m_Settings.stepHeight)) {
+                CollisionResult stepResult = CollisionDetector::resolveCollision(stepBounds, displacement, *m_PhysicsWorld);
+                if (!stepResult.collided || stepResult.position.y >= result.position.y) {
+                    result = stepResult;
+                }
+            }
+        }
+    }
+
     glm::vec3 halfExtents = getHalfExtents();
     glm::vec3 center = result.position;
 
@@ -203,7 +218,7 @@ void Player::updateGroundAndWaterState() {
         return;
     }
 
-    m_Grounded = CollisionDetector::checkGrounded(m_Bounds, *m_PhysicsWorld);
+    m_Grounded = CollisionDetector::checkGrounded(m_Bounds, m_Velocity, *m_PhysicsWorld);
 
     const glm::vec3 halfExtents = getHalfExtents();
     const glm::vec3 center = m_Bounds.getCenter();
@@ -222,8 +237,8 @@ void Player::updateGroundAndWaterState() {
     const auto& feetType = registry.getBlock(feetBlock);
     const auto& torsoType = registry.getBlock(torsoBlock);
 
-    const bool feetInWater = feetType.name == "water";
-    const bool torsoInWater = torsoType.name == "water";
+    const bool feetInWater = feetType.isLiquid;
+    const bool torsoInWater = torsoType.isLiquid;
 
     m_InWater = feetInWater || torsoInWater;
 }

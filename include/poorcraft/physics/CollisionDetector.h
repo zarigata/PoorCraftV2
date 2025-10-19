@@ -36,6 +36,9 @@ public:
                        float maxStepHeight);
 
 private:
+    static glm::vec3 getCollisionNormal(const PhysicsAABB& movingAABB,
+                                        const PhysicsAABB& blockAABB,
+                                        float& outPenetration);
     static glm::vec3 clipVelocity(const glm::vec3& velocity, const glm::vec3& normal, float overbounce);
 };
 

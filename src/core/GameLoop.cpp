@@ -135,4 +135,12 @@ void GameLoop::stop() {
     PC_INFO("[GameLoop] Stop requested");
 }
 
+double GameLoop::getAccumulator() const {
+    return m_Accumulator;
+}
+
+float GameLoop::getFixedTimestep() const {
+    return m_FixedTimestep;
+}
+
 } // namespace PoorCraft

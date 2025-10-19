@@ -12,7 +12,9 @@ enum class EventType {
     WindowClose, WindowResize, WindowFocus, WindowMinimize, WindowMove,
     KeyPress, KeyRelease,
     MouseMove, MouseButtonPress, MouseButtonRelease, MouseScroll,
-    GamepadButton, GamepadAxis
+    GamepadButton, GamepadAxis,
+    PlayerJoined, PlayerLeft, ConnectionEstablished, ConnectionLost,
+    ChunkReceived, ServerStarted, ServerStopped
 };
 
 // Event categories for filtering
@@ -22,7 +24,8 @@ enum EventCategory {
     EventCategoryInput = 1 << 1,
     EventCategoryKeyboard = 1 << 2,
     EventCategoryMouse = 1 << 3,
-    EventCategoryGamepad = 1 << 4
+    EventCategoryGamepad = 1 << 4,
+    EventCategoryNetwork = 1 << 5
 };
 
 // Macros for event class boilerplate

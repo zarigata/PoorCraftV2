@@ -21,6 +21,7 @@ struct BlockType {
     bool isSolid;
     bool isOpaque;
     bool isTransparent;
+    bool isLiquid;
     std::array<std::string, 6> textureIndices;
     uint8_t lightEmission;
     float hardness;
@@ -32,6 +33,7 @@ struct BlockType {
     BlockType& setSolid(bool solid);
     BlockType& setOpaque(bool opaque);
     BlockType& setTransparent(bool transparent);
+    BlockType& setLiquid(bool liquid);
     BlockType& setTextureAllFaces(const std::string& textureName);
     BlockType& setTextureForFace(BlockFace face, const std::string& textureName);
     BlockType& setTexturePerFace(const std::array<std::string, 6>& textures);

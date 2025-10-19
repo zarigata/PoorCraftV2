@@ -8,6 +8,7 @@ file(GLOB_RECURSE SOURCES
     "physics/*.cpp"
     "rendering/*.cpp"
     "utils/*.cpp"
+    "network/*.cpp"
     "world/*.cpp"
 )
 
@@ -30,6 +31,7 @@ target_link_libraries(PoorCraft
         glad
         glm
         stb_image
+        enet
 )
 
 # Set include directories

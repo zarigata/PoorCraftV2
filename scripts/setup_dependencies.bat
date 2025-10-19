@@ -72,6 +72,14 @@ if exist ".gitmodules" (
         goto :glad_setup
     )
 
+    call :print_info "Initializing ENet submodule..."
+    git submodule update --init --recursive libs/enet
+    if errorlevel 1 (
+        call :print_error "Failed to initialize ENet submodule"
+        exit /b 1
+    )
+    call :print_success "ENet submodule initialized successfully"
+
     call :print_success "All Git submodules verified"
 
 ) else (

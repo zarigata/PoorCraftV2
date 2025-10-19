@@ -33,6 +33,8 @@ public:
     float getUpdateTime() const { return m_UpdateTime; }
     float getRenderTime() const { return m_RenderTime; }
     bool isRunning() const { return m_Running; }
+    double getAccumulator() const;
+    float getFixedTimestep() const;
 
     // Non-copyable, non-movable
     GameLoop(const GameLoop&) = delete;

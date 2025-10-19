@@ -91,6 +91,15 @@ if [ -f ".gitmodules" ]; then
         exit 1
     fi
 
+    print_info "Initializing ENet submodule..."
+    git submodule update --init --recursive libs/enet
+    if [ $? -eq 0 ]; then
+        print_success "ENet submodule initialized successfully"
+    else
+        print_error "Failed to initialize ENet submodule"
+        exit 1
+    fi
+
     print_success "All Git submodules verified"
 
 else

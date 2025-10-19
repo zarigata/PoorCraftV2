@@ -20,6 +20,7 @@ public:
     uint16_t registerBlock(BlockType block);
 
     [[nodiscard]] const BlockType& getBlock(uint16_t id) const;
+    [[nodiscard]] const BlockType& getBlockType(uint16_t id) const;
     [[nodiscard]] const BlockType* getBlockByName(const std::string& name) const;
     [[nodiscard]] uint16_t getBlockID(const std::string& name) const;
 
