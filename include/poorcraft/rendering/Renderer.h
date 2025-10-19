@@ -57,6 +57,8 @@ public:
 
     void setCamera(const Camera* camera);
 
+    const Camera* getCamera() const { return m_ActiveCamera; }
+
     const RenderStats& getStats() const;
     void resetStats();
 

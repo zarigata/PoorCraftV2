@@ -14,3 +14,8 @@
     path = libs/enet
     url = https://github.com/lsalzman/enet.git
     branch = master
+
+[submodule "libs/imgui"]
+    path = libs/imgui
+    url = https://github.com/ocornut/imgui.git
+    branch = master

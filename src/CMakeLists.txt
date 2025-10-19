@@ -10,6 +10,7 @@ file(GLOB_RECURSE SOURCES
     "utils/*.cpp"
     "network/*.cpp"
     "world/*.cpp"
+    "ui/*.cpp"
 )
 
 # Create executable target
@@ -32,6 +33,7 @@ target_link_libraries(PoorCraft
         glm
         stb_image
         enet
+        imgui
 )
 
 # Set include directories
