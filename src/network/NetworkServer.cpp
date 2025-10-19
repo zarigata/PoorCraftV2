@@ -131,24 +131,59 @@ void NetworkServer::handleConnect(ENetEvent& event) {
 }
 
 void NetworkServer::handleReceive(ENetEvent& event) {
-    PacketReader reader(event.packet->data, event.packet->dataLength);
-    const PacketType type = static_cast<PacketType>(reader.readUInt8());
+    if (event.packet->dataLength < PacketHeader::SIZE) {
+        PC_WARN("Received undersized packet on server");
+        return;
+    }
+
+    PacketReader headerReader(event.packet->data, event.packet->dataLength);
+    PacketHeader header{};
+    header.type = headerReader.readUInt8();
+    header.size = headerReader.readUInt16();
+    header.sequence = headerReader.readUInt32();
+    header.timestamp = headerReader.readUInt32();
+
+    const PacketType type = header.getPacketType();
+    const std::size_t payloadAvailable = event.packet->dataLength - PacketHeader::SIZE;
+    if (payloadAvailable < header.size) {
+        PC_WARN("Packet payload truncated for type: " + getPacketTypeName(type));
+        return;
+    }
+
+    PacketReader payloadReader(event.packet->data + PacketHeader::SIZE, header.size);
 
     switch (type) {
-        case PacketType::HANDSHAKE_REQUEST:
-            processHandshake(findClientByPeer(event.peer)->peer, reader);
+        case PacketType::HANDSHAKE_REQUEST: {
+            ConnectedClient* client = findClientByPeer(event.peer);
+            if (client) {
+                processHandshake(client->peer, payloadReader);
+                client->lastSequenceReceived = header.sequence;
+                client->lastPacketTimestamp = header.timestamp;
+            }
             break;
+        }
         case PacketType::PLAYER_INPUT: {
             ConnectedClient* client = findClientByPeer(event.peer);
             if (client) {
-                processPlayerInput(*client, reader);
+                processPlayerInput(*client, payloadReader);
+                client->lastSequenceReceived = header.sequence;
+                client->lastPacketTimestamp = header.timestamp;
             }
             break;
         }
         case PacketType::CHUNK_REQUEST: {
             ConnectedClient* client = findClientByPeer(event.peer);
             if (client) {
-                processChunkRequest(*client, reader);
+                processChunkRequest(*client, payloadReader);
+                client->lastSequenceReceived = header.sequence;
+                client->lastPacketTimestamp = header.timestamp;
+            }
+            break;
+        }
+        case PacketType::PING: {
+            ConnectedClient* client = findClientByPeer(event.peer);
+            if (client) {
+                processPing(*client, payloadReader, header);
             }
             break;
         }
