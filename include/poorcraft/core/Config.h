@@ -357,6 +357,17 @@ public:
         static constexpr const char* NAME_KEY = "Player.name";
     };
 
+    /**
+     * @brief Mods configuration section
+     */
+    struct ModsConfig {
+        static constexpr const char* SECTION = "Mods";
+        static constexpr const char* ENABLE_MODS_KEY = "Mods.enable_mods";
+        static constexpr const char* MODS_DIRECTORY_KEY = "Mods.mods_directory";
+        static constexpr const char* ENABLE_HOT_RELOAD_KEY = "Mods.enable_hot_reload";
+        static constexpr const char* HOT_RELOAD_INTERVAL_KEY = "Mods.hot_reload_interval";
+    };
+
 private:
     Config() = default;
     ~Config() = default;

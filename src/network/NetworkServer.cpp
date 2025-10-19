@@ -8,6 +8,8 @@
 #include <enet/enet.h>
 
 #include "poorcraft/core/Logger.h"
+#include "poorcraft/modding/ModManager.h"
+#include "poorcraft/platform/Platform.h"
 #include "poorcraft/core/EventBus.h"
 #include "poorcraft/entity/EntityManager.h"
 #include "poorcraft/entity/components/AnimationController.h"
@@ -34,6 +36,7 @@ NetworkServer::NetworkServer(std::uint16_t port, std::size_t maxClients)
       m_MaxClients(maxClients),
       m_World(nullptr),
       m_EntityManager(nullptr),
+      m_ModManager(nullptr),
       m_ServerTick(0),
       m_Accumulator(0.0),
       m_SnapshotAccumulator(0.0),
@@ -55,12 +58,26 @@ bool NetworkServer::initialize() {
     }
 
     PC_INFO("Network server listening on port " + std::to_string(m_Port));
+    
+    // Initialize mod system (server-only)
+    if (m_ModManager) {
+        std::string modsDir = Platform::join_path(Platform::get_executable_directory(), "mods");
+        m_ModManager->initialize(modsDir);
+        m_ModManager->loadMods();
+        PC_INFO("Loaded {} mods", m_ModManager->getLoadedMods().size());
+    }
+    
     return true;
 }
 
 void NetworkServer::shutdown() {
     if (!m_Host) {
         return;
+    }
+    
+    // Shutdown mods before server
+    if (m_ModManager) {
+        m_ModManager->shutdown();
     }
 
     for (auto& client : m_Clients) {
@@ -116,6 +133,21 @@ void NetworkServer::update(float deltaTime) {
     for (auto& client : m_Clients) {
         updateChunkStreaming(client);
     }
+    
+    // Update mods
+    if (m_ModManager) {
+        m_ModManager->updateMods(deltaTime);
+        
+        // Check for hot-reload (development feature)
+        #ifdef POORCRAFT_DEBUG
+        static double hotReloadTimer = 0.0;
+        hotReloadTimer += deltaTime;
+        if (hotReloadTimer >= 1.0) {  // Check every second
+            m_ModManager->checkForModifications();
+            hotReloadTimer = 0.0;
+        }
+        #endif
+    }
 }
 
 std::size_t NetworkServer::getConnectedClientCount() const {
@@ -132,6 +164,10 @@ void NetworkServer::setWorld(World* world) {
 
 void NetworkServer::setEntityManager(EntityManager* entityManager) {
     m_EntityManager = entityManager;
+}
+
+void NetworkServer::setModManager(ModManager* modManager) {
+    m_ModManager = modManager;
 }
 
 void NetworkServer::handleConnect(ENetEvent& event) {

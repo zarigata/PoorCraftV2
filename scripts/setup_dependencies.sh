@@ -115,6 +115,24 @@ if [ -f ".gitmodules" ]; then
         exit 1
     fi
 
+    print_info "Initializing Lua submodule..."
+    git submodule update --init --recursive libs/lua
+    if [ $? -eq 0 ]; then
+        print_success "Lua submodule initialized successfully"
+    else
+        print_error "Failed to initialize Lua submodule"
+        exit 1
+    fi
+
+    print_info "Initializing sol2 submodule..."
+    git submodule update --init --recursive libs/sol2
+    if [ $? -eq 0 ]; then
+        print_success "sol2 submodule initialized successfully"
+    else
+        print_error "Failed to initialize sol2 submodule"
+        exit 1
+    fi
+
     print_success "All Git submodules verified"
 
 else

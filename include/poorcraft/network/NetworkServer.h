@@ -23,6 +23,7 @@ namespace PoorCraft {
 class World;
 class EntityManager;
 class Chunk;
+class ModManager;
 
 struct ChunkCoord;
 
@@ -53,6 +54,7 @@ public:
 
     void setWorld(World* world);
     void setEntityManager(EntityManager* entityManager);
+    void setModManager(ModManager* modManager);
 
 private:
     void handleConnect(struct _ENetEvent& event);
@@ -79,6 +81,7 @@ private:
 
     World* m_World;
     EntityManager* m_EntityManager;
+    ModManager* m_ModManager;
 
     std::uint32_t m_ServerTick;
     double m_Accumulator;

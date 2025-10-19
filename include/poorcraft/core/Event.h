@@ -14,7 +14,12 @@ enum class EventType {
     MouseMove, MouseButtonPress, MouseButtonRelease, MouseScroll,
     GamepadButton, GamepadAxis,
     PlayerJoined, PlayerLeft, ConnectionEstablished, ConnectionLost,
-    ChunkReceived, ServerStarted, ServerStopped
+    ChunkReceived, ServerStarted, ServerStopped,
+    ModLoaded, ModUnloaded, ModReloaded,
+    BlockPlaced, BlockBroken,
+    EntitySpawned, EntityDestroyed,
+    PlayerInteract,
+    ChunkGenerated
 };
 
 // Event categories for filtering
@@ -25,7 +30,8 @@ enum EventCategory {
     EventCategoryKeyboard = 1 << 2,
     EventCategoryMouse = 1 << 3,
     EventCategoryGamepad = 1 << 4,
-    EventCategoryNetwork = 1 << 5
+    EventCategoryNetwork = 1 << 5,
+    EventCategoryMod = 1 << 6
 };
 
 // Macros for event class boilerplate

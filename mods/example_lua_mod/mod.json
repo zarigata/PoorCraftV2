@@ -1,0 +1,12 @@
+{
+  "id": "example_lua_mod",
+  "name": "Example Lua Mod",
+  "version": "1.0.0",
+  "author": "PoorCraft Team",
+  "description": "Example Lua script demonstrating entity spawning and event hooks",
+  "apiVersion": 1,
+  "dependencies": [],
+  "loadPriority": 200,
+  "type": "lua",
+  "entry": "init.lua"
+}

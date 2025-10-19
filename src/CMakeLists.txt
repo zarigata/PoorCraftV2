@@ -11,6 +11,7 @@ file(GLOB_RECURSE SOURCES
     "network/*.cpp"
     "world/*.cpp"
     "ui/*.cpp"
+    "modding/*.cpp"
 )
 
 # Create executable target
@@ -34,6 +35,7 @@ target_link_libraries(PoorCraft
         stb_image
         enet
         imgui
+        lua
 )
 
 # Set include directories
@@ -54,7 +56,7 @@ elseif(UNIX AND NOT APPLE)
     # Linux specific libraries
     target_link_libraries(PoorCraft PRIVATE
         GL
-        dl
+        ${CMAKE_DL_LIBS}
         pthread
         X11
         Xrandr
