@@ -302,6 +302,18 @@ public:
         static constexpr const char* MAX_FPS = "max_fps";
     };
 
+    struct UIConfig {
+        static constexpr const char* SECTION = "UI";
+        static constexpr const char* UI_SCALE_KEY = "UI.ui_scale";
+        static constexpr const char* UI_THEME_KEY = "UI.ui_theme";
+        static constexpr const char* SHOW_FPS_KEY = "UI.show_fps";
+        static constexpr const char* SHOW_COORDINATES_KEY = "UI.show_coordinates";
+        static constexpr const char* SHOW_DEBUG_INFO_KEY = "UI.show_debug_info";
+        static constexpr const char* CHAT_MAX_MESSAGES_KEY = "UI.chat_max_messages";
+        static constexpr const char* CHAT_FADE_TIME_KEY = "UI.chat_fade_time";
+        static constexpr const char* HUD_OPACITY_KEY = "UI.hud_opacity";
+    };
+
     struct PhysicsConfig {
         static constexpr const char* SECTION = "Physics";
         static constexpr const char* WALK_SPEED_KEY = "Physics.walk_speed";

@@ -40,6 +40,7 @@ target_include_directories(imgui PUBLIC
     ${IMGUI_DIR}/backends
 )
 target_link_libraries(imgui PUBLIC glfw)
+target_link_libraries(imgui PUBLIC glad)
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLAD)
 
 # Export library targets for use in main project
