@@ -112,6 +112,9 @@ private:
     std::string m_LoadTip;
     bool m_CloseRequested = false;
     bool m_Initialized = false;
+    bool m_GameplayReady = false;
+    bool m_PendingEnterGame = false;
+    float m_LoadElapsed = 0.0f;
 };
 
 } // namespace PoorCraft

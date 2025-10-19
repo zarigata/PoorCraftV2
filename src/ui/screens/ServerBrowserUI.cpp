@@ -145,7 +145,7 @@ void ServerBrowserUI::refreshServerList() {
 }
 
 void ServerBrowserUI::connectToServer(const std::string& address, std::uint16_t port) {
-    std::string playerName = m_Config.get_string("Player.name", "Player");
+    std::string playerName = m_Config.get_string(Config::PlayerConfig::NAME_KEY, "Player");
     PC_INFO("ServerBrowserUI: Connecting to " + address + ":" + std::to_string(port));
 
     if (m_NetworkManager.connectToServer(address, port, playerName)) {

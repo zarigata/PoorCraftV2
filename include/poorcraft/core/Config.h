@@ -349,6 +349,14 @@ public:
         static constexpr const char* REACH_DISTANCE = "reach_distance";
     };
 
+    /**
+     * @brief Player configuration section
+     */
+    struct PlayerConfig {
+        static constexpr const char* SECTION = "Player";
+        static constexpr const char* NAME_KEY = "Player.name";
+    };
+
 private:
     Config() = default;
     ~Config() = default;

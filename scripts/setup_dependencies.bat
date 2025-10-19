@@ -80,6 +80,20 @@ if exist ".gitmodules" (
     )
     call :print_success "ENet submodule initialized successfully"
 
+    call :print_info "Initializing ImGui submodule..."
+    git submodule update --init --recursive libs/imgui
+    if errorlevel 1 (
+        call :print_error "Failed to initialize ImGui submodule"
+        exit /b 1
+    )
+    call :print_success "ImGui submodule initialized successfully"
+
+    if not exist "libs\imgui" (
+        call :print_error "ImGui submodule not found after initialization"
+        call :print_error "Please check your internet connection and try again"
+        exit /b 1
+    )
+
     call :print_success "All Git submodules verified"
 
 ) else (

@@ -3,6 +3,7 @@
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/network/NetworkManager.h"
 #include "poorcraft/ui/GameState.h"
+#include "poorcraft/ui/UIScreenManager.h"
 
 #include <imgui.h>
 
@@ -56,8 +57,7 @@ void PauseMenuUI::render() {
 
         if (ImGui::Button("Quit Game", ImVec2(-FLT_MIN, 0.0f))) {
             PC_INFO("PauseMenuUI: Quit Game");
-            // Window close handled by UIScreenManager
-            m_StateManager.setState(GameState::MAIN_MENU);
+            PoorCraft::UIScreenManager::getInstance().requestCloseApplication();
         }
     }
     ImGui::End();

@@ -7,6 +7,7 @@
 #include "poorcraft/world/World.h"
 #include "poorcraft/world/ChunkManager.h"
 
+#include <glm/vec3.hpp>
 #include <imgui.h>
 
 namespace PoorCraft {

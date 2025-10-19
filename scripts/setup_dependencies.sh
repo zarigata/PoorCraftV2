@@ -100,6 +100,21 @@ if [ -f ".gitmodules" ]; then
         exit 1
     fi
 
+    print_info "Initializing ImGui submodule..."
+    git submodule update --init --recursive libs/imgui
+    if [ $? -eq 0 ]; then
+        print_success "ImGui submodule initialized successfully"
+    else
+        print_error "Failed to initialize ImGui submodule"
+        exit 1
+    fi
+
+    if [ ! -d "libs/imgui" ]; then
+        print_error "ImGui submodule not found after initialization"
+        print_error "Please check your internet connection and try again"
+        exit 1
+    fi
+
     print_success "All Git submodules verified"
 
 else
