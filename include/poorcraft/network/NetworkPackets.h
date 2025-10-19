@@ -70,6 +70,8 @@ struct EntitySnapshotPacket {
 struct ChunkDataPacket {
     std::int32_t chunkX = 0;
     std::int32_t chunkZ = 0;
+    std::uint16_t fragmentId = 0;
+    bool isLast = false;
     std::vector<std::uint8_t> blockData;
 
     void serialize(PacketWriter& writer) const;

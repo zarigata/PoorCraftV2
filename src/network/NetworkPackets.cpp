@@ -119,6 +119,8 @@ EntitySnapshotPacket EntitySnapshotPacket::deserialize(PacketReader& reader) {
 void ChunkDataPacket::serialize(PacketWriter& writer) const {
     writer.writeInt32(chunkX);
     writer.writeInt32(chunkZ);
+    writer.writeUInt16(fragmentId);
+    writer.writeUInt8(static_cast<std::uint8_t>(isLast ? 1 : 0));
     writer.writeUInt32(static_cast<std::uint32_t>(blockData.size()));
     for (std::uint8_t byte : blockData) {
         writer.writeUInt8(byte);
@@ -129,6 +131,8 @@ ChunkDataPacket ChunkDataPacket::deserialize(PacketReader& reader) {
     ChunkDataPacket packet;
     packet.chunkX = reader.readInt32();
     packet.chunkZ = reader.readInt32();
+    packet.fragmentId = reader.readUInt16();
+    packet.isLast = reader.readUInt8() != 0;
     const std::uint32_t size = reader.readUInt32();
     packet.blockData.resize(size);
     for (std::uint32_t i = 0; i < size; ++i) {

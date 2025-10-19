@@ -1,6 +1,7 @@
 #include "poorcraft/network/ChunkCompression.h"
 
 #include <algorithm>
+#include <limits>
 
 #include "poorcraft/world/Chunk.h"
 

@@ -31,6 +31,7 @@ public:
     void update(float deltaTime);
 
     NetworkMode getMode() const;
+    bool isInitialized() const;
     bool isServer() const;
     bool isClient() const;
 
@@ -46,6 +47,8 @@ private:
     NetworkMode m_Mode;
     std::unique_ptr<NetworkServer> m_Server;
     std::unique_ptr<NetworkClient> m_Client;
+    bool m_EnetInitialized;
+    bool m_IsInitialized;
 };
 
 } // namespace PoorCraft

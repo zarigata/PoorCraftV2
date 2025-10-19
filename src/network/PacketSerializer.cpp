@@ -1,6 +1,7 @@
 #include "poorcraft/network/PacketSerializer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <limits>
 

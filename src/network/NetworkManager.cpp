@@ -1,6 +1,10 @@
 #include "poorcraft/network/NetworkManager.h"
 
 #include "poorcraft/core/Logger.h"
+#include "poorcraft/core/EventBus.h"
+#include "poorcraft/network/NetworkEvents.h"
+
+#include <enet/enet.h>
 
 namespace PoorCraft {
 
@@ -10,10 +14,26 @@ NetworkManager& NetworkManager::getInstance() {
 }
 
 NetworkManager::NetworkManager()
-    : m_Mode(NetworkMode::NONE) {}
+    : m_Mode(NetworkMode::NONE),
+      m_EnetInitialized(false),
+      m_IsInitialized(false) {}
 
 void NetworkManager::initialize(NetworkMode mode) {
+    if (m_IsInitialized) {
+        PC_WARN("NetworkManager already initialized");
+        return;
+    }
+
+    if (!m_EnetInitialized) {
+        if (enet_initialize() != 0) {
+            PC_FATAL("Failed to initialize ENet");
+            return;
+        }
+        m_EnetInitialized = true;
+    }
+
     m_Mode = mode;
+    m_IsInitialized = true;
     PC_INFO("NetworkManager initialized");
 }
 
@@ -28,13 +48,27 @@ void NetworkManager::shutdown() {
         m_Server.reset();
     }
 
+    if (m_Server) {
+        EventBus::getInstance().publish(ServerStoppedEvent("NetworkManager shutdown"));
+    }
+
     m_Mode = NetworkMode::NONE;
+    m_IsInitialized = false;
+    if (m_EnetInitialized) {
+        enet_deinitialize();
+        m_EnetInitialized = false;
+    }
     PC_INFO("NetworkManager shutdown");
 }
 
 bool NetworkManager::startServer(std::uint16_t port, std::size_t maxPlayers) {
-    if (m_Mode != NetworkMode::NONE) {
-        PC_ERROR("Network already initialized");
+    if (!m_IsInitialized) {
+        PC_ERROR("NetworkManager must be initialized before starting server");
+        return false;
+    }
+
+    if (m_Server) {
+        PC_ERROR("Server already running");
         return false;
     }
 
@@ -45,10 +79,16 @@ bool NetworkManager::startServer(std::uint16_t port, std::size_t maxPlayers) {
     }
 
     m_Mode = NetworkMode::DEDICATED_SERVER;
+    EventBus::getInstance().publish(ServerStartedEvent(port, maxPlayers));
     return true;
 }
 
 bool NetworkManager::startIntegratedServer(std::uint16_t port, std::size_t maxPlayers) {
+    if (!m_IsInitialized) {
+        PC_ERROR("NetworkManager must be initialized before starting integrated server");
+        return false;
+    }
+
     if (!startServer(port, maxPlayers)) {
         return false;
     }
@@ -64,8 +104,13 @@ bool NetworkManager::startIntegratedServer(std::uint16_t port, std::size_t maxPl
 }
 
 bool NetworkManager::connectToServer(const std::string& address, std::uint16_t port, const std::string& playerName) {
-    if (m_Mode != NetworkMode::NONE) {
-        PC_ERROR("Network already initialized");
+    if (!m_IsInitialized) {
+        PC_ERROR("NetworkManager must be initialized before connecting");
+        return false;
+    }
+
+    if (m_Client) {
+        PC_ERROR("Client already connected");
         return false;
     }
 
@@ -107,6 +152,10 @@ void NetworkManager::update(float deltaTime) {
 
 NetworkMode NetworkManager::getMode() const {
     return m_Mode;
+}
+
+bool NetworkManager::isInitialized() const {
+    return m_IsInitialized;
 }
 
 bool NetworkManager::isServer() const {

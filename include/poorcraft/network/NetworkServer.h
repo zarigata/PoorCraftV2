@@ -34,6 +34,8 @@ struct ConnectedClient {
     std::uint32_t lastSnapshotTick = 0;
     std::unordered_set<std::int64_t> loadedChunks;
     double connectionTime = 0.0;
+    std::uint32_t lastSequenceReceived = 0;
+    std::uint32_t lastPacketTimestamp = 0;
 };
 
 class NetworkServer {

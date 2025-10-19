@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <map>
 
 #include "poorcraft/entity/Entity.h"
 #include "poorcraft/network/NetworkPackets.h"
@@ -64,6 +65,11 @@ private:
     void processChatMessage(PacketReader& reader);
 
     void reconcileLocalPlayer(const EntitySnapshotPacket& snapshot);
+    void addRemoteSnapshot(const EntityStateData& state, std::uint32_t serverTick);
+    void updateRemoteEntities(double renderTime);
+    void processCompleteChunk(std::int32_t chunkX, std::int32_t chunkZ, const std::vector<std::uint8_t>& data);
+    std::uint64_t getChunkKey(std::int32_t chunkX, std::int32_t chunkZ) const;
+    void cleanupChunkAssemblies(double currentTimeMs);
 
     ENetHost* m_Host;
     ENetPeer* m_ServerPeer;
@@ -80,6 +86,24 @@ private:
     std::vector<EntitySnapshotPacket> m_SnapshotBuffer;
 
     std::uint32_t m_NextInputSequence;
+    std::uint32_t m_LastSequenceReceived;
+    std::uint32_t m_LastPacketTimestamp;
+
+    double m_ServerTimeOffset;
+    double m_LastPingTime;
+    double m_PingInterval;
+    std::string m_ServerAddress;
+    std::uint16_t m_ServerPort;
+
+    struct ChunkFragmentBuffer {
+        std::map<std::uint16_t, std::vector<std::uint8_t>> fragments;
+        bool lastReceived = false;
+        std::uint16_t lastFragmentId = 0;
+        double lastUpdateTime = 0.0;
+        std::size_t totalSize = 0;
+    };
+
+    std::unordered_map<std::uint64_t, ChunkFragmentBuffer> m_PendingChunkFragments;
 };
 
 } // namespace PoorCraft
