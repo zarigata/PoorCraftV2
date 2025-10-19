@@ -33,10 +33,10 @@ bool isReliablePacket(PacketType type) {
         case PacketType::DISCONNECT:
         case PacketType::BLOCK_UPDATE:
         case PacketType::PLAYER_SPAWN:
+        case PacketType::CHUNK_REQUEST:
             return true;
         case PacketType::PLAYER_INPUT:
         case PacketType::ENTITY_SNAPSHOT:
-        case PacketType::CHUNK_REQUEST:
         case PacketType::PING:
         case PacketType::PONG:
             return false;

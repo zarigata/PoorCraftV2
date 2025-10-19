@@ -1,14 +1,20 @@
 #include "poorcraft/network/NetworkPeer.h"
 
+#include <chrono>
+#include <limits>
+
 #include <enet/enet.h>
 
 #include "poorcraft/core/Logger.h"
+#include "poorcraft/core/Config.h"
 #include "poorcraft/network/PacketSerializer.h"
 
 namespace PoorCraft {
 
 NetworkPeer::NetworkPeer(ENetPeer* peer)
-    : m_Peer(peer), m_UserData(nullptr) {}
+    : m_Peer(peer),
+      m_UserData(peer ? peer->data : nullptr),
+      m_NextSequence(1) {}
 
 bool NetworkPeer::send(const std::uint8_t* data, std::size_t size, enet_uint8 channel, bool reliable) {
     if (!m_Peer || !data || size == 0) {
@@ -37,13 +43,30 @@ bool NetworkPeer::sendPacket(PacketType type, const PacketWriter& writer, enet_u
         return false;
     }
 
+    const std::size_t payloadSize = writer.getSize();
+    if (payloadSize > std::numeric_limits<std::uint16_t>::max()) {
+        PC_ERROR("Packet payload exceeds uint16_t size limit for type: " + getPacketTypeName(type));
+        return false;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    const auto timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+
     PacketWriter headerWriter;
     headerWriter.writeUInt8(static_cast<std::uint8_t>(type));
-    headerWriter.writeUInt16(static_cast<std::uint16_t>(writer.getSize()));
-    headerWriter.writeUInt32(0);
-    headerWriter.writeUInt32(0);
+    headerWriter.writeUInt16(static_cast<std::uint16_t>(payloadSize));
+    headerWriter.writeUInt32(m_NextSequence++);
+    headerWriter.writeUInt32(static_cast<std::uint32_t>(timestampMs & 0xffffffffULL));
 
-    const std::size_t totalSize = headerWriter.getSize() + writer.getSize();
+    const std::size_t totalSize = headerWriter.getSize() + payloadSize;
+
+    const auto& config = poorcraft::Config::get_instance();
+    const int configuredMax = config.get_int(poorcraft::Config::NetworkConfig::MAX_PACKET_SIZE_KEY, 1200);
+    if (configuredMax > 0 && totalSize > static_cast<std::size_t>(configuredMax)) {
+        PC_ERROR("Packet exceeds configured max size for type: " + getPacketTypeName(type));
+        return false;
+    }
+
     std::vector<std::uint8_t> buffer;
     buffer.reserve(totalSize);
     buffer.insert(buffer.end(), headerWriter.getData(), headerWriter.getData() + headerWriter.getSize());

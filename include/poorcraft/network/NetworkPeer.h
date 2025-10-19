@@ -47,6 +47,7 @@ public:
 private:
     ENetPeer* m_Peer;
     void* m_UserData;
+    mutable std::uint32_t m_NextSequence;
 };
 
 } // namespace PoorCraft

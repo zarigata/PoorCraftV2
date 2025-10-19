@@ -23,21 +23,24 @@ enum class PacketType : std::uint8_t {
 };
 
 struct PacketHeader {
+    static constexpr std::size_t SIZE = 1 + 2 + 4 + 4;
+
     std::uint8_t type;
     std::uint16_t size;
     std::uint32_t sequence;
     std::uint32_t timestamp;
+
+    PacketType getPacketType() const {
+        return static_cast<PacketType>(type);
+    }
+
+    void setPacketType(PacketType packetType) {
+        type = static_cast<std::uint8_t>(packetType);
+    }
 };
 
 std::string getPacketTypeName(PacketType type);
 
 bool isReliablePacket(PacketType type);
-
-// Packet channels:
-// Channel 0 (reliable ordered) - handshake, join/leave, chunk data, disconnect.
-// Channel 1 (unreliable sequenced) - entity snapshots, player input, ping/pong.
-// Channel 2 (reliable ordered) - chat, block updates, events.
-// PacketHeader is prepended to every payload for validation.
-// All multi-byte fields are little-endian for cross-platform compatibility.
 
 } // namespace PoorCraft
