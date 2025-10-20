@@ -37,6 +37,13 @@ public:
      * @brief Shutdown Lua state
      */
     void shutdown();
+    
+    /**
+     * @brief Set engine system pointers for Lua bindings
+     */
+    void setEntityManager(class EntityManager* entityManager);
+    void setWorld(class World* world);
+    void setChunkManager(class ChunkManager* chunkManager);
 
     /**
      * @brief Execute Lua script from file
@@ -105,6 +112,11 @@ private:
 
     std::unique_ptr<sol::state> m_State;
     std::vector<std::string> m_ScriptPaths;  // For hot-reload tracking
+    
+    // Engine system pointers
+    class EntityManager* m_EntityManager;
+    class World* m_World;
+    class ChunkManager* m_ChunkManager;
 };
 
 } // namespace PoorCraft

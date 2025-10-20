@@ -4,8 +4,9 @@
 #include <array>
 
 #include "poorcraft/core/Config.h"
-
+#include "poorcraft/core/EventBus.h"
 #include "poorcraft/core/Logger.h"
+#include "poorcraft/modding/ModEvents.h"
 #include "poorcraft/world/BlockRegistry.h"
 #include "poorcraft/world/TerrainGenerator.h"
 
@@ -211,6 +212,10 @@ void ChunkManager::generateChunk(const ChunkCoord& coord) {
     PC_DEBUG("Generated chunk " + coord.toString());
     enqueueMesh(coord);
     markNeighborChunksDirty(coord);
+    
+    // Publish ChunkGeneratedEvent after chunk generation
+    ChunkGeneratedEvent event(coord.x, coord.z);
+    EventBus::getInstance().publish(event);
 }
 
 void ChunkManager::meshChunk(const ChunkCoord& coord) {

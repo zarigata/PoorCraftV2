@@ -1,5 +1,6 @@
 #include "poorcraft/modding/ModInfo.h"
 #include "poorcraft/platform/Platform.h"
+#include "poorcraft/platform/DynamicLibrary.h"
 #include "poorcraft/core/Logger.h"
 
 #include <fstream>
@@ -33,9 +34,15 @@ ModMetadata ModManifest::parseManifest(const std::string& manifestPath) {
 
     std::string entry = extractJsonString(content, "entry");
     
+    // If entry lacks an extension, decorate it with platform-specific prefix/suffix
+    std::string libraryName = entry;
+    if (metadata.isNative && libraryName.find('.') == std::string::npos) {
+        libraryName = DynamicLibrary::decorateLibraryName(libraryName);
+    }
+    
     // Construct library path (manifest directory + entry filename)
     std::string manifestDir = Platform::get_directory_name(manifestPath);
-    metadata.libraryPath = Platform::join_path(manifestDir, entry);
+    metadata.libraryPath = Platform::join_path(manifestDir, libraryName);
 
     // Validate required fields
     if (metadata.id.empty() || metadata.name.empty() || metadata.version.empty() || 

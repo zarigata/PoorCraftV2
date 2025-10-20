@@ -3,6 +3,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "poorcraft/core/Logger.h"
+#include "poorcraft/core/EventBus.h"
+#include "poorcraft/modding/ModEvents.h"
 #include "poorcraft/resource/ResourceManager.h"
 
 namespace PoorCraft {
@@ -186,6 +188,69 @@ std::unique_ptr<TextureAtlas> World::createBlockTextureAtlas() {
     }
 
     return atlas;
+}
+
+bool World::setBlockAt(int32_t worldX, int32_t worldY, int32_t worldZ, uint16_t blockId, uint32_t playerId) {
+    if (!chunkManager) {
+        return false;
+    }
+    
+    // Convert world coordinates to chunk coordinates and local block coordinates
+    const int32_t chunkX = worldX < 0 ? (worldX - Chunk::CHUNK_SIZE_X + 1) / Chunk::CHUNK_SIZE_X : worldX / Chunk::CHUNK_SIZE_X;
+    const int32_t chunkZ = worldZ < 0 ? (worldZ - Chunk::CHUNK_SIZE_Z + 1) / Chunk::CHUNK_SIZE_Z : worldZ / Chunk::CHUNK_SIZE_Z;
+    const int32_t localX = worldX - chunkX * Chunk::CHUNK_SIZE_X;
+    const int32_t localZ = worldZ - chunkZ * Chunk::CHUNK_SIZE_Z;
+    
+    ChunkCoord coord(chunkX, chunkZ);
+    Chunk* chunk = chunkManager->getChunk(coord);
+    if (!chunk) {
+        return false;
+    }
+    
+    // Get previous block ID
+    uint16_t previousBlockId = chunk->getBlock(localX, worldY, localZ);
+    
+    // Set the block
+    chunk->setBlock(localX, worldY, localZ, blockId);
+    
+    // Publish appropriate event
+    if (blockId != 0 && previousBlockId == 0) {
+        // Block placed
+        BlockPlacedEvent event(worldX, worldY, worldZ, blockId, static_cast<EntityID>(playerId), previousBlockId);
+        EventBus::getInstance().publish(event);
+    } else if (blockId == 0 && previousBlockId != 0) {
+        // Block broken
+        BlockBrokenEvent event(worldX, worldY, worldZ, previousBlockId, static_cast<EntityID>(playerId));
+        EventBus::getInstance().publish(event);
+    } else if (blockId != previousBlockId && blockId != 0 && previousBlockId != 0) {
+        // Block replaced (publish both events)
+        BlockBrokenEvent breakEvent(worldX, worldY, worldZ, previousBlockId, static_cast<EntityID>(playerId));
+        EventBus::getInstance().publish(breakEvent);
+        BlockPlacedEvent placeEvent(worldX, worldY, worldZ, blockId, static_cast<EntityID>(playerId), previousBlockId);
+        EventBus::getInstance().publish(placeEvent);
+    }
+    
+    return true;
+}
+
+uint16_t World::getBlockAt(int32_t worldX, int32_t worldY, int32_t worldZ) const {
+    if (!chunkManager) {
+        return 0;
+    }
+    
+    // Convert world coordinates to chunk coordinates and local block coordinates
+    const int32_t chunkX = worldX < 0 ? (worldX - Chunk::CHUNK_SIZE_X + 1) / Chunk::CHUNK_SIZE_X : worldX / Chunk::CHUNK_SIZE_X;
+    const int32_t chunkZ = worldZ < 0 ? (worldZ - Chunk::CHUNK_SIZE_Z + 1) / Chunk::CHUNK_SIZE_Z : worldZ / Chunk::CHUNK_SIZE_Z;
+    const int32_t localX = worldX - chunkX * Chunk::CHUNK_SIZE_X;
+    const int32_t localZ = worldZ - chunkZ * Chunk::CHUNK_SIZE_Z;
+    
+    ChunkCoord coord(chunkX, chunkZ);
+    Chunk* chunk = chunkManager->getChunk(coord);
+    if (!chunk) {
+        return 0;
+    }
+    
+    return chunk->getBlock(localX, worldY, localZ);
 }
 
 } // namespace PoorCraft

@@ -150,21 +150,6 @@ void* DynamicLibrary::getSymbolInternal(const char* symbolName) const {
     return symbol;
 }
 
-template<typename T>
-T DynamicLibrary::getSymbol(const char* symbolName) const {
-    void* symbol = getSymbolInternal(symbolName);
-    return reinterpret_cast<T>(symbol);
-}
-
-template<typename T>
-T DynamicLibrary::tryGetSymbol(const char* symbolName) const {
-    try {
-        return getSymbol<T>(symbolName);
-    } catch (const std::runtime_error&) {
-        return nullptr;
-    }
-}
-
 std::string DynamicLibrary::getLibraryExtension() {
 #ifdef _WIN32
     return ".dll";
@@ -182,9 +167,5 @@ std::string DynamicLibrary::decorateLibraryName(const std::string& baseName) {
     return "lib" + baseName + getLibraryExtension();
 #endif
 }
-
-// Explicit template instantiations for common function pointer types
-template void* DynamicLibrary::getSymbol<void*>(const char*) const;
-template void* DynamicLibrary::tryGetSymbol<void*>(const char*) const;
 
 } // namespace PoorCraft

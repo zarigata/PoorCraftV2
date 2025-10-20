@@ -94,6 +94,22 @@ if exist ".gitmodules" (
         exit /b 1
     )
 
+    call :print_info "Initializing Lua submodule..."
+    git submodule update --init --recursive libs/lua
+    if errorlevel 1 (
+        call :print_error "Failed to initialize Lua submodule"
+        exit /b 1
+    )
+    call :print_success "Lua submodule initialized successfully"
+
+    call :print_info "Initializing sol2 submodule..."
+    git submodule update --init --recursive libs/sol2
+    if errorlevel 1 (
+        call :print_error "Failed to initialize sol2 submodule"
+        exit /b 1
+    )
+    call :print_success "sol2 submodule initialized successfully"
+
     call :print_success "All Git submodules verified"
 
 ) else (

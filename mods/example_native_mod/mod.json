@@ -8,5 +8,5 @@
   "dependencies": [],
   "loadPriority": 100,
   "type": "native",
-  "entry": "example_native_mod.dll"
+  "entry": "example_native_mod"
 }

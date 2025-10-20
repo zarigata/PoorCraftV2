@@ -1,11 +1,18 @@
 #include "poorcraft/modding/LuaScriptEngine.h"
 #include "poorcraft/modding/ModAPI.h"
 #include "poorcraft/modding/ModInfo.h"
+#include "poorcraft/modding/ModEvents.h"
+#include "poorcraft/network/NetworkEvents.h"
 #include "poorcraft/world/BlockRegistry.h"
 #include "poorcraft/world/BlockType.h"
+#include "poorcraft/world/World.h"
+#include "poorcraft/world/ChunkManager.h"
+#include "poorcraft/world/ChunkCoord.h"
 #include "poorcraft/entity/EntityManager.h"
 #include "poorcraft/entity/components/Transform.h"
+#include "poorcraft/entity/components/NetworkIdentity.h"
 #include "poorcraft/core/EventBus.h"
+#include "poorcraft/core/Event.h"
 #include "poorcraft/core/Config.h"
 #include "poorcraft/core/Logger.h"
 
@@ -18,11 +25,26 @@ namespace PoorCraft {
 
 LuaScriptEngine::LuaScriptEngine()
     : m_State(nullptr)
+    , m_EntityManager(nullptr)
+    , m_World(nullptr)
+    , m_ChunkManager(nullptr)
 {
 }
 
 LuaScriptEngine::~LuaScriptEngine() {
     shutdown();
+}
+
+void LuaScriptEngine::setEntityManager(EntityManager* entityManager) {
+    m_EntityManager = entityManager;
+}
+
+void LuaScriptEngine::setWorld(World* world) {
+    m_World = world;
+}
+
+void LuaScriptEngine::setChunkManager(ChunkManager* chunkManager) {
+    m_ChunkManager = chunkManager;
 }
 
 void LuaScriptEngine::initialize() {
@@ -198,28 +220,43 @@ void LuaScriptEngine::registerEngineBindings() {
         }
     };
 
-    blockNamespace["setBlockAt"] = [](int32_t x, int32_t y, int32_t z, uint16_t blockId) -> bool {
-        // TODO: Implement via ChunkManager
-        PC_DEBUG("Lua mod set block {} at ({}, {}, {})", blockId, x, y, z);
-        return true;
+    blockNamespace["setBlockAt"] = [this](int32_t x, int32_t y, int32_t z, uint16_t blockId) -> bool {
+        if (!m_World) {
+            PC_WARN("Lua mod attempted to set block but World is not available");
+            return false;
+        }
+        return m_World->setBlockAt(x, y, z, blockId, 0);
     };
 
-    blockNamespace["getBlockAt"] = [](int32_t x, int32_t y, int32_t z) -> uint16_t {
-        // TODO: Implement via ChunkManager
-        PC_DEBUG("Lua mod get block at ({}, {}, {})", x, y, z);
-        return 0;
+    blockNamespace["getBlockAt"] = [this](int32_t x, int32_t y, int32_t z) -> uint16_t {
+        if (!m_World) {
+            PC_WARN("Lua mod attempted to get block but World is not available");
+            return 0;
+        }
+        return m_World->getBlockAt(x, y, z);
     };
 
     // Create Entity namespace
     sol::table entityNamespace = m_State->create_named_table("Entity");
 
-    entityNamespace["spawn"] = [](const std::string& name, float x, float y, float z) -> uint32_t {
+    entityNamespace["spawn"] = [this](const std::string& name, float x, float y, float z) -> uint32_t {
         try {
-            Entity& entity = EntityManager::getInstance().createEntity(name);
+            if (!m_EntityManager) {
+                PC_ERROR("Lua mod attempted to spawn entity but EntityManager is not available");
+                return 0;
+            }
+            Entity& entity = m_EntityManager->createEntity(name);
             
             if (!entity.hasComponent<Transform>()) {
                 auto& transform = entity.addComponent<Transform>();
                 transform.position = glm::vec3(x, y, z);
+            }
+            
+            // Add NetworkIdentity for client sync
+            if (!entity.hasComponent<NetworkIdentity>()) {
+                auto& netId = entity.addComponent<NetworkIdentity>();
+                netId.setNetworkId(entity.getId());
+                netId.setServerControlled(true);
             }
 
             PC_INFO("Lua mod spawned entity: {} (ID: {}) at ({}, {}, {})", 
@@ -231,18 +268,25 @@ void LuaScriptEngine::registerEngineBindings() {
         }
     };
 
-    entityNamespace["destroy"] = [](uint32_t entityId) -> bool {
+    entityNamespace["destroy"] = [this](uint32_t entityId) -> bool {
         try {
-            EntityManager::getInstance().destroyEntity(static_cast<EntityID>(entityId));
+            if (!m_EntityManager) {
+                PC_ERROR("Lua mod attempted to destroy entity but EntityManager is not available");
+                return false;
+            }
+            m_EntityManager->destroyEntity(static_cast<EntityID>(entityId));
             return true;
         } catch (...) {
             return false;
         }
     };
 
-    entityNamespace["getPosition"] = [](uint32_t entityId) -> sol::optional<glm::vec3> {
+    entityNamespace["getPosition"] = [this](uint32_t entityId) -> sol::optional<glm::vec3> {
         try {
-            Entity* entity = EntityManager::getInstance().getEntity(static_cast<EntityID>(entityId));
+            if (!m_EntityManager) {
+                return sol::nullopt;
+            }
+            Entity* entity = m_EntityManager->getEntity(static_cast<EntityID>(entityId));
             if (!entity) return sol::nullopt;
 
             Transform* transform = entity->getComponent<Transform>();
@@ -254,9 +298,12 @@ void LuaScriptEngine::registerEngineBindings() {
         }
     };
 
-    entityNamespace["setPosition"] = [](uint32_t entityId, float x, float y, float z) -> bool {
+    entityNamespace["setPosition"] = [this](uint32_t entityId, float x, float y, float z) -> bool {
         try {
-            Entity* entity = EntityManager::getInstance().getEntity(static_cast<EntityID>(entityId));
+            if (!m_EntityManager) {
+                return false;
+            }
+            Entity* entity = m_EntityManager->getEntity(static_cast<EntityID>(entityId));
             if (!entity) return false;
 
             Transform* transform = entity->getComponent<Transform>();
@@ -272,16 +319,97 @@ void LuaScriptEngine::registerEngineBindings() {
     // Create EventBus namespace
     sol::table eventBusNamespace = m_State->create_named_table("EventBus");
 
-    eventBusNamespace["subscribe"] = [](const std::string& eventTypeName, sol::function callback) -> uint32_t {
+    eventBusNamespace["subscribe"] = [this](const std::string& eventTypeName, sol::function callback) -> uint32_t {
         try {
             // Map event type name to EventType enum
-            // For now, just use a simple mapping
             EventType eventType = EventType::None;
+            if (eventTypeName == "PlayerJoined") eventType = EventType::PlayerJoined;
+            else if (eventTypeName == "PlayerLeft") eventType = EventType::PlayerLeft;
+            else if (eventTypeName == "BlockPlaced") eventType = EventType::BlockPlaced;
+            else if (eventTypeName == "BlockBroken") eventType = EventType::BlockBroken;
+            else if (eventTypeName == "EntitySpawned") eventType = EventType::EntitySpawned;
+            else if (eventTypeName == "EntityDestroyed") eventType = EventType::EntityDestroyed;
+            else if (eventTypeName == "PlayerInteract") eventType = EventType::PlayerInteract;
+            else if (eventTypeName == "ChunkGenerated") eventType = EventType::ChunkGenerated;
+            else {
+                PC_WARN("Lua mod subscribed to unknown event type: {}", eventTypeName);
+                return 0;
+            }
             
-            auto listener = [callback](Event& event) mutable {
+            auto listener = [this, callback, eventType](Event& event) mutable {
                 try {
-                    // Create Lua table with event data
-                    callback();
+                    // Create Lua table with event data based on type
+                    sol::table eventData = m_State->create_table();
+                    
+                    switch (eventType) {
+                        case EventType::PlayerJoined: {
+                            auto& e = static_cast<PlayerJoinedEvent&>(event);
+                            eventData["playerId"] = static_cast<uint32_t>(e.getPlayerId());
+                            eventData["playerName"] = e.getPlayerName();
+                            eventData["position"] = e.getPosition();
+                            break;
+                        }
+                        case EventType::PlayerLeft: {
+                            auto& e = static_cast<PlayerLeftEvent&>(event);
+                            eventData["playerId"] = static_cast<uint32_t>(e.getPlayerId());
+                            eventData["playerName"] = e.getPlayerName();
+                            eventData["reason"] = e.getReason();
+                            break;
+                        }
+                        case EventType::BlockPlaced: {
+                            auto& e = static_cast<BlockPlacedEvent&>(event);
+                            eventData["x"] = e.getX();
+                            eventData["y"] = e.getY();
+                            eventData["z"] = e.getZ();
+                            eventData["blockId"] = e.getBlockId();
+                            eventData["playerId"] = static_cast<uint32_t>(e.getPlayerId());
+                            eventData["previousBlockId"] = e.getPreviousBlockId();
+                            break;
+                        }
+                        case EventType::BlockBroken: {
+                            auto& e = static_cast<BlockBrokenEvent&>(event);
+                            eventData["x"] = e.getX();
+                            eventData["y"] = e.getY();
+                            eventData["z"] = e.getZ();
+                            eventData["blockId"] = e.getBlockId();
+                            eventData["playerId"] = static_cast<uint32_t>(e.getPlayerId());
+                            break;
+                        }
+                        case EventType::EntitySpawned: {
+                            auto& e = static_cast<EntitySpawnedEvent&>(event);
+                            eventData["entityId"] = static_cast<uint32_t>(e.getEntityId());
+                            eventData["entityName"] = e.getEntityName();
+                            eventData["position"] = e.getPosition();
+                            eventData["spawnedBy"] = static_cast<uint32_t>(e.getSpawnedBy());
+                            break;
+                        }
+                        case EventType::EntityDestroyed: {
+                            auto& e = static_cast<EntityDestroyedEvent&>(event);
+                            eventData["entityId"] = static_cast<uint32_t>(e.getEntityId());
+                            eventData["reason"] = e.getReason();
+                            break;
+                        }
+                        case EventType::PlayerInteract: {
+                            auto& e = static_cast<PlayerInteractEvent&>(event);
+                            eventData["playerId"] = static_cast<uint32_t>(e.getPlayerId());
+                            eventData["targetX"] = e.getTargetX();
+                            eventData["targetY"] = e.getTargetY();
+                            eventData["targetZ"] = e.getTargetZ();
+                            eventData["targetBlockId"] = e.getTargetBlockId();
+                            eventData["interactionType"] = static_cast<uint8_t>(e.getInteractionType());
+                            break;
+                        }
+                        case EventType::ChunkGenerated: {
+                            auto& e = static_cast<ChunkGeneratedEvent&>(event);
+                            eventData["chunkX"] = e.getChunkX();
+                            eventData["chunkZ"] = e.getChunkZ();
+                            break;
+                        }
+                        default:
+                            break;
+                    }
+                    
+                    callback(eventData);
                 } catch (const std::exception& e) {
                     PC_ERROR("Lua event callback failed: {}", e.what());
                 }
@@ -303,6 +431,36 @@ void LuaScriptEngine::registerEngineBindings() {
             PC_ERROR("Lua EventBus.unsubscribe failed: {}", e.what());
         }
     };
+    
+    eventBusNamespace["publish"] = [this](const std::string& eventTypeName, sol::table eventData) {
+        try {
+            // Map event type name and publish
+            if (eventTypeName == "BlockPlaced") {
+                BlockPlacedEvent event(
+                    eventData.get_or("x", 0),
+                    eventData.get_or("y", 0),
+                    eventData.get_or("z", 0),
+                    eventData.get_or<uint16_t>("blockId", 0),
+                    static_cast<EntityID>(eventData.get_or<uint32_t>("playerId", 0)),
+                    eventData.get_or<uint16_t>("previousBlockId", 0)
+                );
+                EventBus::getInstance().publish(event);
+            } else if (eventTypeName == "BlockBroken") {
+                BlockBrokenEvent event(
+                    eventData.get_or("x", 0),
+                    eventData.get_or("y", 0),
+                    eventData.get_or("z", 0),
+                    eventData.get_or<uint16_t>("blockId", 0),
+                    static_cast<EntityID>(eventData.get_or<uint32_t>("playerId", 0))
+                );
+                EventBus::getInstance().publish(event);
+            } else {
+                PC_WARN("Lua mod attempted to publish unsupported event type: {}", eventTypeName);
+            }
+        } catch (const std::exception& e) {
+            PC_ERROR("Lua EventBus.publish failed: {}", e.what());
+        }
+    };
 
     // Create World namespace
     sol::table worldNamespace = m_State->create_named_table("World");
@@ -312,12 +470,17 @@ void LuaScriptEngine::registerEngineBindings() {
     
     worldNamespace["getSeed"] = []() -> int64_t {
         // TODO: Implement via World
+        PC_WARN("Lua mod queried world seed - not yet implemented, returning 0");
         return 0;
     };
 
-    worldNamespace["getChunkLoaded"] = [](int32_t chunkX, int32_t chunkZ) -> bool {
-        // TODO: Implement via ChunkManager
-        return false;
+    worldNamespace["getChunkLoaded"] = [this](int32_t chunkX, int32_t chunkZ) -> bool {
+        if (!m_ChunkManager) {
+            PC_WARN("Lua mod queried chunk loaded but ChunkManager is not available");
+            return false;
+        }
+        ChunkCoord coord(chunkX, chunkZ);
+        return m_ChunkManager->hasChunk(coord);
     };
 
     // Create Config namespace
@@ -325,7 +488,7 @@ void LuaScriptEngine::registerEngineBindings() {
 
     configNamespace["getInt"] = [](const std::string& key, int32_t defaultValue) -> int32_t {
         try {
-            return Config::getInstance().get_int(key, defaultValue);
+            return poorcraft::Config::get_instance().get_int(key, defaultValue);
         } catch (...) {
             return defaultValue;
         }
@@ -333,7 +496,7 @@ void LuaScriptEngine::registerEngineBindings() {
 
     configNamespace["getFloat"] = [](const std::string& key, float defaultValue) -> float {
         try {
-            return Config::getInstance().get_float(key, defaultValue);
+            return poorcraft::Config::get_instance().get_float(key, defaultValue);
         } catch (...) {
             return defaultValue;
         }
@@ -341,7 +504,7 @@ void LuaScriptEngine::registerEngineBindings() {
 
     configNamespace["getString"] = [](const std::string& key, const std::string& defaultValue) -> std::string {
         try {
-            return Config::getInstance().get_string(key, defaultValue);
+            return poorcraft::Config::get_instance().get_string(key, defaultValue);
         } catch (...) {
             return defaultValue;
         }
@@ -349,7 +512,7 @@ void LuaScriptEngine::registerEngineBindings() {
 
     configNamespace["setInt"] = [](const std::string& key, int32_t value) {
         try {
-            Config::getInstance().set_int(key, value);
+            poorcraft::Config::get_instance().set_int(key, value);
         } catch (const std::exception& e) {
             PC_ERROR("Lua Config.setInt failed: {}", e.what());
         }

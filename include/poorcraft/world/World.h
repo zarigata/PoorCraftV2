@@ -34,6 +34,10 @@ public:
     TextureAtlas& getTextureAtlas();
 
     [[nodiscard]] const WorldRenderStats& getRenderStats() const;
+    
+    // Block manipulation with event publication
+    bool setBlockAt(int32_t worldX, int32_t worldY, int32_t worldZ, uint16_t blockId, uint32_t playerId = 0);
+    uint16_t getBlockAt(int32_t worldX, int32_t worldY, int32_t worldZ) const;
 
 private:
     std::unique_ptr<TextureAtlas> createBlockTextureAtlas();

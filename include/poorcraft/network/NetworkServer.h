@@ -63,6 +63,7 @@ private:
 
     void processHandshake(NetworkPeer& peer, PacketReader& reader);
     void processPlayerInput(ConnectedClient& client, PacketReader& reader);
+    void processBlockUpdate(ConnectedClient& client, PacketReader& reader);
     void processChunkRequest(ConnectedClient& client, PacketReader& reader);
 
     void sendEntitySnapshot();

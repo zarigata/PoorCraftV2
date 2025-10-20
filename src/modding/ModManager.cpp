@@ -5,6 +5,12 @@
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/core/Config.h"
 #include "poorcraft/core/EventBus.h"
+#include "poorcraft/entity/EntityManager.h"
+#include "poorcraft/world/World.h"
+#include "poorcraft/world/ChunkManager.h"
+
+#define SOL_ALL_SAFETIES_ON 1
+#include <sol/sol.hpp>
 
 #include <algorithm>
 #include <unordered_map>
@@ -18,17 +24,57 @@ ModManager& ModManager::getInstance() {
     return instance;
 }
 
+void ModManager::setEntityManager(EntityManager* entityManager) {
+    m_EntityManager = entityManager;
+    // Recreate ModAPI with updated pointers
+    m_ModAPI = createModAPI(m_EntityManager, m_World, m_ChunkManager);
+    // Update LuaScriptEngine pointers
+    if (m_LuaEngine) {
+        m_LuaEngine->setEntityManager(m_EntityManager);
+    }
+}
+
+void ModManager::setWorld(World* world) {
+    m_World = world;
+    // Also set ChunkManager from World if available
+    if (m_World) {
+        m_ChunkManager = &m_World->getChunkManager();
+    }
+    // Recreate ModAPI with updated pointers
+    m_ModAPI = createModAPI(m_EntityManager, m_World, m_ChunkManager);
+    // Update LuaScriptEngine pointers
+    if (m_LuaEngine) {
+        m_LuaEngine->setWorld(m_World);
+        m_LuaEngine->setChunkManager(m_ChunkManager);
+    }
+}
+
+void ModManager::setChunkManager(ChunkManager* chunkManager) {
+    m_ChunkManager = chunkManager;
+    // Recreate ModAPI with updated pointers
+    m_ModAPI = createModAPI(m_EntityManager, m_World, m_ChunkManager);
+    // Update LuaScriptEngine pointers
+    if (m_LuaEngine) {
+        m_LuaEngine->setChunkManager(m_ChunkManager);
+    }
+}
+
 void ModManager::initialize(const std::string& modsDirectory) {
     PC_INFO("Initializing ModManager...");
     
     m_ModsDirectory = modsDirectory;
     
+    // Initialize engine system pointers to nullptr
+    m_EntityManager = nullptr;
+    m_World = nullptr;
+    m_ChunkManager = nullptr;
+    
     // Create Lua engine
     m_LuaEngine = std::make_unique<LuaScriptEngine>();
     m_LuaEngine->initialize();
     
-    // Create ModAPI
-    m_ModAPI = createModAPI();
+    // Create ModAPI (with null pointers initially)
+    m_ModAPI = createModAPI(m_EntityManager, m_World, m_ChunkManager);
     
     // Discover mods
     discoverMods();
@@ -108,7 +154,7 @@ void ModManager::discoverMods() {
             
             // Check if enabled in config
             std::string enableKey = "Mods." + metadata.id + ".enabled";
-            metadata.enabled = Config::getInstance().get_bool(enableKey, true);
+            metadata.enabled = poorcraft::Config::get_instance().get_bool(enableKey, true);
             
             m_DiscoveredMods.push_back(metadata);
             PC_INFO("Discovered mod: {} v{} ({})", metadata.name, metadata.version, 
@@ -253,11 +299,18 @@ bool ModManager::loadNativeMod(const ModMetadata& metadata) {
             return false;
         }
         
+        // Set mod context for subscription tracking
+        ModAPI_SetCurrentModContext(&loadedMod.eventSubscriptions);
+        
         // Initialize mod
         if (!loadedMod.initFunc(&m_ModAPI)) {
             PC_ERROR("InitializeMod failed for mod: {}", metadata.id);
+            ModAPI_SetCurrentModContext(nullptr);
             return false;
         }
+        
+        // Clear mod context
+        ModAPI_SetCurrentModContext(nullptr);
         
         // Get file modification time
         loadedMod.lastModifiedTime = getFileModTime(metadata.libraryPath);
@@ -293,6 +346,18 @@ bool ModManager::loadLuaMod(const ModMetadata& metadata) {
         loadedMod.enabled = true;
         loadedMod.lastModifiedTime = getFileModTime(metadata.libraryPath);
         
+        // Store per-mod update function if it exists
+        sol::state* luaState = m_LuaEngine->getState();
+        if (luaState) {
+            sol::optional<sol::protected_function> updateFunc = (*luaState)["update"];
+            if (updateFunc) {
+                loadedMod.luaUpdateFunc = std::make_unique<sol::protected_function>(*updateFunc);
+                PC_DEBUG("Lua mod '{}' has update function", metadata.name);
+                // Clear global update to avoid conflicts with next mod
+                (*luaState)["update"] = sol::nil;
+            }
+        }
+        
         m_LoadedMods.push_back(std::move(loadedMod));
         PC_INFO("Successfully loaded Lua mod: {}", metadata.name);
         return true;
@@ -313,6 +378,13 @@ void ModManager::unloadMod(const std::string& modId) {
     }
     
     PC_INFO("Unloading mod: {}", it->metadata.name);
+    
+    // Unsubscribe all event subscriptions for this mod
+    for (uint32_t modSubId : it->eventSubscriptions) {
+        m_ModAPI.unsubscribeEvent(modSubId);
+        PC_DEBUG("Unsubscribed event {} for mod {}", modSubId, modId);
+    }
+    it->eventSubscriptions.clear();
     
     // Call shutdown function
     if (it->metadata.isNative && it->shutdownFunc) {
@@ -367,10 +439,17 @@ void ModManager::updateMods(float deltaTime) {
         
         try {
             if (mod.metadata.isNative && mod.updateFunc) {
+                // Set mod context to track subscriptions created during UpdateMod
+                ModAPI_SetCurrentModContext(&mod.eventSubscriptions);
                 mod.updateFunc(deltaTime);
-            } else if (!mod.metadata.isNative && m_LuaEngine) {
-                // Call global update function if exists
-                m_LuaEngine->callFunction("update", deltaTime);
+                ModAPI_SetCurrentModContext(nullptr);
+            } else if (!mod.metadata.isNative && mod.luaUpdateFunc) {
+                // Call per-mod Lua update function
+                sol::protected_function_result result = (*mod.luaUpdateFunc)(deltaTime);
+                if (!result.valid()) {
+                    sol::error err = result;
+                    PC_ERROR("Lua mod '{}' update failed: {}", mod.metadata.id, err.what());
+                }
             }
         } catch (const std::exception& e) {
             PC_ERROR("Error updating mod {}: {}", mod.metadata.id, e.what());
@@ -402,7 +481,7 @@ bool ModManager::isModLoaded(const std::string& modId) const {
 void ModManager::enableMod(const std::string& modId) {
     // Update config
     std::string enableKey = "Mods." + modId + ".enabled";
-    Config::getInstance().set_bool(enableKey, true);
+    poorcraft::Config::get_instance().set_bool(enableKey, true);
     
     // Load if not already loaded
     if (!isModLoaded(modId)) {
@@ -422,7 +501,7 @@ void ModManager::enableMod(const std::string& modId) {
 void ModManager::disableMod(const std::string& modId) {
     // Update config
     std::string enableKey = "Mods." + modId + ".enabled";
-    Config::getInstance().set_bool(enableKey, false);
+    poorcraft::Config::get_instance().set_bool(enableKey, false);
     
     // Unload if currently loaded
     if (isModLoaded(modId)) {

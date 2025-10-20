@@ -18,8 +18,12 @@ static uint32_t s_BlockPlacedSubscription = 0;
 
 // Event callback for block placed
 void OnBlockPlaced(const void* eventData, void* userData) {
-    if (s_API) {
-        s_API->logInfo("Example Native Mod: Block placed event received!");
+    if (s_API && eventData) {
+        const BlockPlacedEventData* data = static_cast<const BlockPlacedEventData*>(eventData);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "Example Native Mod: Block %u placed at (%d, %d, %d) by player %u", 
+                 data->blockId, data->x, data->y, data->z, data->playerId);
+        s_API->logInfo(msg);
     }
 }
 
@@ -59,7 +63,7 @@ bool InitializeMod(const ModAPI* api) {
     
     // Subscribe to block placed events
     s_BlockPlacedSubscription = s_API->subscribeEvent(
-        static_cast<uint32_t>(19),  // BlockPlaced event type
+        POORCRAFT_EVENT_BLOCK_PLACED,
         OnBlockPlaced,
         nullptr
     );

@@ -20,12 +20,11 @@ PoorCraft is an open-source Minecraft clone built from the ground up with modern
 - **Configuration management** with INI file support
 - **Platform abstraction** layer for OS-specific operations
 - **Noise-driven world generation** featuring five biomes, biome blending, caves, ores, trees, cactus, tall grass, and flowers
+- **Modding system** with dual native/Lua plugin support, comprehensive mod API, hot-reload, event hooks, and example mods
 
 ### Planned Features
 - **Modern OpenGL rendering pipeline** with GLSL shaders
 - **32x32 pixel art skin system** for character customization
-- **Multiplayer networking** infrastructure
-- **Modding API** for community content
 - **Advanced graphics features** (ray tracing, shadows, lighting)
 
 ## 📋 System Requirements
@@ -195,6 +194,8 @@ PoorCraft uses the following third-party libraries:
 - **[GLM](https://github.com/g-truc/glm)** - OpenGL Mathematics library (Git submodule)
 - **[stb_image](https://github.com/nothings/stb)** - Image loading library (downloaded)
 - **[FastNoiseLite](https://github.com/Auburn/FastNoiseLite)** - Deterministic noise generation (vendored)
+- **[Lua 5.4](https://github.com/lua/lua)** - Scripting runtime for mods (Git submodule)
+- **[sol2](https://github.com/ThePhD/sol2)** - Modern C++17 Lua binding library (Git submodule)
 
 GLFW and GLM are included as Git submodules. GLAD files need to be generated from https://glad.dav1d.de/ with OpenGL 4.6 Core profile, and stb_image.h needs to be downloaded. Use the provided `setup_dependencies` scripts to automate this process.
 
@@ -250,6 +251,59 @@ Tune generation with the `[World]` section of `config.ini`:
 - `ore_frequency`
 - `tree_density`
 
+## 🔌 Modding
+
+PoorCraft features a comprehensive server-side modding system supporting both native C++ plugins and Lua 5.4 scripts.
+
+### Features
+- **Dual Plugin System**: Native C++ plugins for performance, Lua scripts for flexibility
+- **Server-Side Only**: Mods run on authoritative server, changes synced to clients automatically
+- **Mod API**: Block registration, entity spawning, event subscription, world modification, config access, logging
+- **Event Hooks**: Block placed/broken, entity spawned/destroyed, player interact, chunk generated, player join/leave
+- **Hot-Reload**: Automatic reload on file changes (debug builds), rapid development workflow
+- **Mod Discovery**: Scan mods/ directory for mod.json manifests, validate API version and dependencies
+- **Load Ordering**: Dependency resolution with topological sort, load priority for fine control
+- **Example Mods**: example_native_mod (block registration), example_lua_mod (entity spawning), event_logger_mod (event monitoring)
+
+### Quick Start
+
+**Create a Lua Mod:**
+```lua
+-- mods/my_mod/init.lua
+print("My mod loading...")
+
+-- Register custom block
+local blockId = Block.registerBlock({
+    name = "my_block",
+    isSolid = true,
+    textureName = "stone",
+    hardness = 2.0
+})
+
+-- Subscribe to events
+EventBus.subscribe("PlayerJoined", function(event)
+    print("Welcome " .. event.playerName .. "!")
+end)
+```
+
+**Create mod.json:**
+```json
+{
+  "id": "my_mod",
+  "name": "My Mod",
+  "version": "1.0.0",
+  "author": "YourName",
+  "description": "My awesome mod",
+  "apiVersion": 1,
+  "dependencies": [],
+  "loadPriority": 100,
+  "type": "lua",
+  "entry": "init.lua"
+}
+```
+
+See **[Modding Guide](docs/MODDING.md)** for complete documentation.
+
 ## 🛠️ Development
 
 ### Current Status
@@ -262,12 +316,12 @@ Tune generation with the `[World]` section of `config.ini`:
 - ✅ Events (Pub/sub system, event types)
 - ✅ Resources (Loading, caching, async support)
 - ✅ Memory (Tracking, pooling)
+- ✅ Modding System (Native plugins, Lua scripts, ModAPI, hot-reload)
 
 **Next Steps:**
-- 🔲 OpenGL rendering pipeline
-- 🔲 Shader system
-- 🔲 Networking and multiplayer systems
-- 🔲 Modding hooks and scripting
+- 🔲 Advanced rendering (lighting, water, particles, sky)
+- 🔲 Audio system
+- 🔲 World persistence (save/load)
 
 ### Building from Source
 
@@ -286,6 +340,7 @@ Please read the [Contributing Guidelines](docs/CONTRIBUTING.md) before making co
 - **[Build Guide](docs/BUILD.md)** - Detailed build instructions
 - **[Architecture](docs/ARCHITECTURE.md)** - Project structure and design
 - **[API Reference](docs/API.md)** - Core systems API documentation
+- **[Modding Guide](docs/MODDING.md)** - Complete modding guide with tutorials
 - **[Contributing](docs/CONTRIBUTING.md)** - How to contribute to the project
 
 ## 📄 License

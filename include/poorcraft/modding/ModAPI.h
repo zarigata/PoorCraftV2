@@ -11,8 +11,114 @@ extern "C" {
 typedef struct ModAPI ModAPI;
 typedef struct ModInfo ModInfo;
 
+// Event type constants (matching EventType enum in Event.h)
+#define POORCRAFT_EVENT_NONE 0
+#define POORCRAFT_EVENT_WINDOW_CLOSE 1
+#define POORCRAFT_EVENT_WINDOW_RESIZE 2
+#define POORCRAFT_EVENT_WINDOW_FOCUS 3
+#define POORCRAFT_EVENT_WINDOW_MINIMIZE 4
+#define POORCRAFT_EVENT_WINDOW_MOVE 5
+#define POORCRAFT_EVENT_KEY_PRESS 6
+#define POORCRAFT_EVENT_KEY_RELEASE 7
+#define POORCRAFT_EVENT_MOUSE_MOVE 8
+#define POORCRAFT_EVENT_MOUSE_BUTTON_PRESS 9
+#define POORCRAFT_EVENT_MOUSE_BUTTON_RELEASE 10
+#define POORCRAFT_EVENT_MOUSE_SCROLL 11
+#define POORCRAFT_EVENT_GAMEPAD_BUTTON 12
+#define POORCRAFT_EVENT_GAMEPAD_AXIS 13
+#define POORCRAFT_EVENT_PLAYER_JOINED 14
+#define POORCRAFT_EVENT_PLAYER_LEFT 15
+#define POORCRAFT_EVENT_CONNECTION_ESTABLISHED 16
+#define POORCRAFT_EVENT_CONNECTION_LOST 17
+#define POORCRAFT_EVENT_CHUNK_RECEIVED 18
+#define POORCRAFT_EVENT_SERVER_STARTED 19
+#define POORCRAFT_EVENT_SERVER_STOPPED 20
+#define POORCRAFT_EVENT_MOD_LOADED 21
+#define POORCRAFT_EVENT_MOD_UNLOADED 22
+#define POORCRAFT_EVENT_MOD_RELOADED 23
+#define POORCRAFT_EVENT_BLOCK_PLACED 24
+#define POORCRAFT_EVENT_BLOCK_BROKEN 25
+#define POORCRAFT_EVENT_ENTITY_SPAWNED 26
+#define POORCRAFT_EVENT_ENTITY_DESTROYED 27
+#define POORCRAFT_EVENT_PLAYER_INTERACT 28
+#define POORCRAFT_EVENT_CHUNK_GENERATED 29
+
 // Event callback signature
 typedef void (*EventCallback)(const void* eventData, void* userData);
+
+/**
+ * @brief C ABI event payload structures
+ * 
+ * These structs provide stable C-compatible payloads for events.
+ * Pointers are valid only for the duration of the callback.
+ */
+
+typedef struct PlayerJoinedEventData {
+    uint32_t playerId;
+    char playerName[64];
+    float positionX;
+    float positionY;
+    float positionZ;
+} PlayerJoinedEventData;
+
+typedef struct PlayerLeftEventData {
+    uint32_t playerId;
+    char playerName[64];
+    char reason[128];
+} PlayerLeftEventData;
+
+typedef struct BlockPlacedEventData {
+    int32_t x;
+    int32_t y;
+    int32_t z;
+    uint16_t blockId;
+    uint32_t playerId;
+    uint16_t previousBlockId;
+} BlockPlacedEventData;
+
+typedef struct BlockBrokenEventData {
+    int32_t x;
+    int32_t y;
+    int32_t z;
+    uint16_t blockId;
+    uint32_t playerId;
+} BlockBrokenEventData;
+
+typedef struct EntitySpawnedEventData {
+    uint32_t entityId;
+    char entityName[64];
+    float positionX;
+    float positionY;
+    float positionZ;
+    uint32_t spawnedBy;
+} EntitySpawnedEventData;
+
+typedef struct EntityDestroyedEventData {
+    uint32_t entityId;
+    char reason[128];
+} EntityDestroyedEventData;
+
+typedef struct PlayerInteractEventData {
+    uint32_t playerId;
+    int32_t targetX;
+    int32_t targetY;
+    int32_t targetZ;
+    uint16_t targetBlockId;
+    uint8_t interactionType; // 0 = LEFT_CLICK, 1 = RIGHT_CLICK
+} PlayerInteractEventData;
+
+typedef struct ChunkGeneratedEventData {
+    int32_t chunkX;
+    int32_t chunkZ;
+} ChunkGeneratedEventData;
+
+/**
+ * @brief Generic mod event wrapper
+ */
+typedef struct ModEvent {
+    uint32_t eventType;
+    const void* data;
+} ModEvent;
 
 /**
  * @brief Mod metadata structure
@@ -90,7 +196,16 @@ void ShutdownMod();
 
 // C++ helper to create ModAPI struct
 #ifdef __cplusplus
+#include <vector>
 namespace PoorCraft {
-    ModAPI createModAPI();
+    // Forward declarations
+    class EntityManager;
+    class World;
+    class ChunkManager;
+    
+    ModAPI createModAPI(EntityManager* entityManager, World* world, ChunkManager* chunkManager);
+    
+    // Internal: Set current mod context for subscription tracking
+    void ModAPI_SetCurrentModContext(std::vector<uint32_t>* subscriptions);
 }
 #endif

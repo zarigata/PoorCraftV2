@@ -1,6 +1,9 @@
 #include "poorcraft/entity/EntityManager.h"
 
 #include "poorcraft/core/Logger.h"
+#include "poorcraft/core/EventBus.h"
+#include "poorcraft/modding/ModEvents.h"
+#include "poorcraft/entity/components/Transform.h"
 
 namespace PoorCraft {
 
@@ -18,6 +21,16 @@ Entity& EntityManager::createEntity(const std::string& name) {
     m_Entities.emplace(id, std::move(entity));
 
     PC_INFO("Entity created (id=" + std::to_string(id) + ", name=" + name + ")");
+    
+    // Publish EntitySpawnedEvent after entity is fully initialized
+    // Note: Position will be (0,0,0) if Transform hasn't been added yet
+    glm::vec3 position(0.0f);
+    if (reference.hasComponent<Transform>()) {
+        position = reference.getComponent<Transform>()->position;
+    }
+    EntitySpawnedEvent spawnEvent(id, name, position, 0); // spawnedBy=0 for system-spawned
+    EventBus::getInstance().publish(spawnEvent);
+    
     return reference;
 }
 
@@ -25,6 +38,10 @@ void EntityManager::destroyEntity(EntityID id) {
     std::lock_guard<std::mutex> lock(m_Mutex);
     auto it = m_Entities.find(id);
     if (it != m_Entities.end()) {
+        // Publish EntityDestroyedEvent before entity is removed
+        EntityDestroyedEvent destroyEvent(id, "Destroyed");
+        EventBus::getInstance().publish(destroyEvent);
+        
         PC_INFO("Entity destroyed (id=" + std::to_string(id) + ")");
         m_Entities.erase(it);
     }

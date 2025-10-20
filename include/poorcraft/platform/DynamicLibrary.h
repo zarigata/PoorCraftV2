@@ -64,7 +64,10 @@ public:
      * @throws std::runtime_error if symbol not found
      */
     template<typename T>
-    T getSymbol(const char* symbolName) const;
+    T getSymbol(const char* symbolName) const {
+        void* symbol = getSymbolInternal(symbolName);
+        return reinterpret_cast<T>(symbol);
+    }
 
     /**
      * @brief Try to get symbol (returns nullptr on failure)
@@ -73,7 +76,13 @@ public:
      * @return Function pointer or nullptr
      */
     template<typename T>
-    T tryGetSymbol(const char* symbolName) const;
+    T tryGetSymbol(const char* symbolName) const {
+        try {
+            return getSymbol<T>(symbolName);
+        } catch (const std::runtime_error&) {
+            return nullptr;
+        }
+    }
 
     /**
      * @brief Get platform-specific library extension

@@ -9,6 +9,7 @@
 
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/modding/ModManager.h"
+#include "poorcraft/modding/ModEvents.h"
 #include "poorcraft/platform/Platform.h"
 #include "poorcraft/core/EventBus.h"
 #include "poorcraft/entity/EntityManager.h"
@@ -61,10 +62,19 @@ bool NetworkServer::initialize() {
     
     // Initialize mod system (server-only)
     if (m_ModManager) {
-        std::string modsDir = Platform::join_path(Platform::get_executable_directory(), "mods");
-        m_ModManager->initialize(modsDir);
-        m_ModManager->loadMods();
-        PC_INFO("Loaded {} mods", m_ModManager->getLoadedMods().size());
+        bool enableMods = poorcraft::Config::get_instance().get_bool("Mods.enable_mods", true);
+        if (enableMods) {
+            std::string modsDir = poorcraft::Config::get_instance().get_string("Mods.mods_directory", "mods");
+            // Make path absolute if relative
+            if (!Platform::is_absolute_path(modsDir)) {
+                modsDir = Platform::join_path(Platform::get_executable_directory(), modsDir);
+            }
+            m_ModManager->initialize(modsDir);
+            m_ModManager->loadMods();
+            PC_INFO("Loaded {} mods", m_ModManager->getLoadedMods().size());
+        } else {
+            PC_INFO("Mods are disabled in config");
+        }
     }
     
     return true;
@@ -138,15 +148,17 @@ void NetworkServer::update(float deltaTime) {
     if (m_ModManager) {
         m_ModManager->updateMods(deltaTime);
         
-        // Check for hot-reload (development feature)
-        #ifdef POORCRAFT_DEBUG
-        static double hotReloadTimer = 0.0;
-        hotReloadTimer += deltaTime;
-        if (hotReloadTimer >= 1.0) {  // Check every second
-            m_ModManager->checkForModifications();
-            hotReloadTimer = 0.0;
+        // Check for hot-reload if enabled
+        bool enableHotReload = poorcraft::Config::get_instance().get_bool("Mods.enable_hot_reload", false);
+        if (enableHotReload) {
+            static double hotReloadTimer = 0.0;
+            float hotReloadInterval = poorcraft::Config::get_instance().get_float("Mods.hot_reload_interval", 1.0f);
+            hotReloadTimer += deltaTime;
+            if (hotReloadTimer >= hotReloadInterval) {
+                m_ModManager->checkForModifications();
+                hotReloadTimer = 0.0;
+            }
         }
-        #endif
     }
 }
 
@@ -237,6 +249,15 @@ void NetworkServer::handleReceive(ENetEvent& event) {
                 PacketWriter writer;
                 pong.serialize(writer);
                 client->peer.sendPacket(PacketType::PONG, writer, 1);
+            }
+            break;
+        }
+        case PacketType::BLOCK_UPDATE: {
+            ConnectedClient* client = findClientByPeer(event.peer);
+            if (client) {
+                processBlockUpdate(*client, payloadReader);
+                client->lastSequenceReceived = header.sequence;
+                client->lastPacketTimestamp = header.timestamp;
             }
             break;
         }
@@ -338,6 +359,76 @@ void NetworkServer::processHandshake(NetworkPeer& peer, PacketReader& reader) {
 void NetworkServer::processPlayerInput(ConnectedClient& client, PacketReader& reader) {
     auto packet = PlayerInputPacket::deserialize(reader);
     client.lastInputSequence = packet.inputSequence;
+}
+
+void NetworkServer::processBlockUpdate(ConnectedClient& client, PacketReader& reader) {
+    auto packet = BlockUpdatePacket::deserialize(reader);
+    
+    if (!m_World) {
+        PC_WARN("Received block update but World is not available");
+        return;
+    }
+    
+    // Validate player ID matches the client
+    if (packet.playerId != client.playerId) {
+        PC_WARN("Block update player ID mismatch: expected " + std::to_string(client.playerId) + 
+                ", got " + std::to_string(packet.playerId));
+        return;
+    }
+    
+    // Get the current block at the target position before modification
+    uint16_t targetBlockId = m_World->getBlockAt(packet.worldX, packet.worldY, packet.worldZ);
+    
+    // Determine interaction type based on block ID change
+    InteractionType interactionType;
+    if (packet.blockId == 0 && targetBlockId != 0) {
+        // Breaking a block (setting to air)
+        interactionType = InteractionType::LEFT_CLICK;
+    } else if (packet.blockId != 0) {
+        // Placing a block
+        interactionType = InteractionType::RIGHT_CLICK;
+    } else {
+        // Air to air or invalid interaction
+        PC_DEBUG("Invalid block interaction: air to air at ({}, {}, {})", 
+                 packet.worldX, packet.worldY, packet.worldZ);
+        return;
+    }
+    
+    // Publish PlayerInteractEvent BEFORE modifying the world
+    PlayerInteractEvent interactEvent(
+        packet.playerId,
+        packet.worldX,
+        packet.worldY,
+        packet.worldZ,
+        targetBlockId,
+        interactionType
+    );
+    EventBus::getInstance().publish(interactEvent);
+    
+    // Debug logging for event emission
+    bool debugEvents = poorcraft::Config::get_instance().get_bool("Debug.log_mod_events", false);
+    if (debugEvents) {
+        PC_DEBUG("Published PlayerInteractEvent: player={}, pos=({},{},{}), targetBlock={}, type={}",
+                 packet.playerId, packet.worldX, packet.worldY, packet.worldZ, 
+                 targetBlockId, static_cast<int>(interactionType));
+    }
+    
+    // Apply the block change (this will also publish BlockPlaced/BlockBroken events)
+    bool success = m_World->setBlockAt(packet.worldX, packet.worldY, packet.worldZ, 
+                                       packet.blockId, packet.playerId);
+    
+    if (!success) {
+        PC_WARN("Failed to set block at ({}, {}, {}) to {}",
+                packet.worldX, packet.worldY, packet.worldZ, packet.blockId);
+        return;
+    }
+    
+    // Broadcast the block update to all clients
+    PacketWriter writer;
+    packet.serialize(writer);
+    for (auto& otherClient : m_Clients) {
+        otherClient.peer.sendPacket(PacketType::BLOCK_UPDATE, writer, 0);
+    }
 }
 
 void NetworkServer::processChunkRequest(ConnectedClient& client, PacketReader& reader) {

@@ -12,6 +12,9 @@
 
 namespace PoorCraft {
 
+// Forward declare sol::protected_function
+namespace sol { class protected_function; }
+
 class LuaScriptEngine;
 
 /**
@@ -28,6 +31,12 @@ struct LoadedMod {
     void (*updateFunc)(float);
     void (*shutdownFunc)();
     
+    // Lua mod update function
+    std::unique_ptr<sol::protected_function> luaUpdateFunc;
+    
+    // Event subscription tracking for cleanup
+    std::vector<uint32_t> eventSubscriptions;
+    
     std::chrono::time_point<std::chrono::system_clock> lastModifiedTime;
     bool enabled;
 
@@ -36,6 +45,7 @@ struct LoadedMod {
         , initFunc(nullptr)
         , updateFunc(nullptr)
         , shutdownFunc(nullptr)
+        , luaUpdateFunc(nullptr)
         , enabled(true)
     {}
 };
@@ -55,6 +65,13 @@ public:
      * @param modsDirectory Path to mods directory
      */
     void initialize(const std::string& modsDirectory);
+    
+    /**
+     * @brief Set engine system pointers for ModAPI
+     */
+    void setEntityManager(class EntityManager* entityManager);
+    void setWorld(class World* world);
+    void setChunkManager(class ChunkManager* chunkManager);
 
     /**
      * @brief Shutdown mod manager and unload all mods
@@ -149,6 +166,11 @@ private:
     std::vector<LoadedMod> m_LoadedMods;
     std::unique_ptr<LuaScriptEngine> m_LuaEngine;
     ModAPI m_ModAPI;
+    
+    // Engine system pointers for ModAPI
+    class EntityManager* m_EntityManager;
+    class World* m_World;
+    class ChunkManager* m_ChunkManager;
 };
 
 } // namespace PoorCraft

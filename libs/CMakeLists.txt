@@ -82,9 +82,12 @@ file(GLOB LUA_SOURCES
 
 add_library(lua STATIC ${LUA_SOURCES})
 target_include_directories(lua PUBLIC ${LUA_DIR})
-if(UNIX)
+if(UNIX AND NOT APPLE)
     target_compile_definitions(lua PRIVATE LUA_USE_POSIX)
     target_link_libraries(lua PUBLIC m dl)
+elseif(APPLE)
+    target_compile_definitions(lua PRIVATE LUA_USE_POSIX)
+    target_link_libraries(lua PUBLIC m)
 endif()
 
 # sol2 - Header-only Lua C++ binding (no build step)
