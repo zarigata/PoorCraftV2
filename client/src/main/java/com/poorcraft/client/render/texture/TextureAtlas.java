@@ -42,7 +42,7 @@ public class TextureAtlas implements AutoCloseable {
      * @param maxLayers Maximum number of layers in the array
      */
     public TextureAtlas(int tileSize, int maxLayers) {
-        this(tileSize, maxLayers, GLInfo.getInstance());
+        this(tileSize, maxLayers, new GLInfo());
     }
     
     /**

@@ -1,3 +1,7 @@
+plugins {
+    id 'java-library'
+}
+
 dependencies {
     // Only depend on common module to keep API clean
     api project(':common')

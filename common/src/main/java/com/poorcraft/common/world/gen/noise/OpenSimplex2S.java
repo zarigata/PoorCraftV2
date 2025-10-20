@@ -82,8 +82,8 @@ public class OpenSimplex2S {
         double dy1 = yi;
         double attn1 = 2.0 / 3.0 - dx1 * dx1 - dy1 * dy1;
         if (attn1 > 0) {
-            int pxm = (xsb * PRIME_X) & PMASK;
-            int pym = (ysb * PRIME_Y) & PMASK;
+            int pxm = (int) (xsb * PRIME_X) & PMASK;
+            int pym = (int) (ysb * PRIME_Y) & PMASK;
             Grad2 grad = permGrad2[perm[pxm] ^ pym];
             double extrapolation = grad.dx * dx1 + grad.dy * dy1;
             attn1 *= attn1;
@@ -95,8 +95,8 @@ public class OpenSimplex2S {
         double dy2 = yi - 0;
         double attn2 = 2.0 / 3.0 - dx2 * dx2 - dy2 * dy2;
         if (attn2 > 0) {
-            int pxm = ((xsb + 1) * PRIME_X) & PMASK;
-            int pym = (ysb * PRIME_Y) & PMASK;
+            int pxm = (int) ((xsb + 1) * PRIME_X) & PMASK;
+            int pym = (int) (ysb * PRIME_Y) & PMASK;
             Grad2 grad = permGrad2[perm[pxm] ^ pym];
             double extrapolation = grad.dx * dx2 + grad.dy * dy2;
             attn2 *= attn2;
@@ -108,8 +108,8 @@ public class OpenSimplex2S {
         double dy3 = yi - 1;
         double attn3 = 2.0 / 3.0 - dx3 * dx3 - dy3 * dy3;
         if (attn3 > 0) {
-            int pxm = (xsb * PRIME_X) & PMASK;
-            int pym = ((ysb + 1) * PRIME_Y) & PMASK;
+            int pxm = (int) (xsb * PRIME_X) & PMASK;
+            int pym = (int) ((ysb + 1) * PRIME_Y) & PMASK;
             Grad2 grad = permGrad2[perm[pxm] ^ pym];
             double extrapolation = grad.dx * dx3 + grad.dy * dy3;
             attn3 *= attn3;
@@ -141,9 +141,9 @@ public class OpenSimplex2S {
             
             double attn = 0.6 - dx * dx - dy * dy - dz * dz;
             if (attn > 0) {
-                int pxm = ((xrb + xi) * PRIME_X) & PMASK;
-                int pym = ((yrb + yi) * PRIME_Y) & PMASK;
-                int pzm = ((zrb + zi) * PRIME_Z) & PMASK;
+                int pxm = (int) (((xrb + xi) * PRIME_X) & PMASK);
+                int pym = (int) (((yrb + yi) * PRIME_Y) & PMASK);
+                int pzm = (int) (((zrb + zi) * PRIME_Z) & PMASK);
                 Grad3 grad = permGrad3[perm[perm[pxm] ^ pym] ^ pzm];
                 double extrapolation = grad.dx * dx + grad.dy * dy + grad.dz * dz;
                 attn *= attn;

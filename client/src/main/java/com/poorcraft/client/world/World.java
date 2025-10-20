@@ -1,13 +1,13 @@
 package com.poorcraft.client.world;
 
 import com.poorcraft.client.render.camera.Camera;
-import com.poorcraft.client.render.shader.ShaderManager;
 import com.poorcraft.client.render.shader.ShaderProgram;
 import com.poorcraft.client.render.texture.TextureAtlas;
-import com.poorcraft.client.render.texture.TextureManager;
+import com.poorcraft.client.resource.ShaderManager;
+import com.poorcraft.client.resource.TextureManager;
 import com.poorcraft.common.config.Configuration;
+import com.poorcraft.common.util.ChunkPos;
 import com.poorcraft.common.world.gen.TerrainGenerator;
-import com.poorcraft.core.Renderable;
 import com.poorcraft.core.Updatable;
 import org.slf4j.Logger;
 
@@ -53,14 +53,14 @@ public class World implements Updatable, Renderable {
         
         // Create world shader
         try {
-            this.worldShader = shaderManager.loadShader("chunk", "shaders/chunk.vert", "shaders/chunk.frag");
+            this.worldShader = shaderManager.loadShader("chunk");
         } catch (Exception e) {
             LOGGER.error("Failed to load chunk shader", e);
             throw new RuntimeException("Failed to initialize world", e);
         }
         
         // Initialize chunk renderer
-        this.chunkRenderer = new ChunkRenderer(camera, worldShader, blockAtlas);
+        this.chunkRenderer = new ChunkRenderer(camera, worldShader, blockAtlas, shaderManager);
         
         // Initialize chunk loader with texture lookup function
         this.chunkLoader = new ChunkLoader(config, terrainGenerator, chunkRenderer, this::getTextureLayer);
@@ -135,6 +135,9 @@ public class World implements Updatable, Renderable {
     
     @Override
     public void render(double alpha) {
+        // Update occlusion culling results before rendering
+        chunkRenderer.updateOcclusionResults();
+        
         // Render all visible chunks
         chunkRenderer.render(camera);
     }

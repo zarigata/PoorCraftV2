@@ -1,18 +1,7 @@
 package com.poorcraft.client;
 
-import com.poorcraft.client.input.InputManager;
-import com.poorcraft.client.render.GLInfo;
 import com.poorcraft.client.render.Renderer;
-import com.poorcraft.client.render.camera.Camera;
-import com.poorcraft.client.resource.FileWatcher;
-import com.poorcraft.client.resource.ShaderManager;
-import com.poorcraft.client.resource.TextureManager;
-import com.poorcraft.client.window.Window;
-import com.poorcraft.client.world.World;
-import com.poorcraft.common.Constants;
-import com.poorcraft.common.config.Configuration;
 import com.poorcraft.core.Engine;
-import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;

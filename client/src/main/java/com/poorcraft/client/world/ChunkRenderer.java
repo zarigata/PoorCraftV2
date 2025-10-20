@@ -4,35 +4,148 @@ import com.poorcraft.client.render.camera.Camera;
 import com.poorcraft.client.render.camera.Frustum;
 import com.poorcraft.client.render.shader.ShaderProgram;
 import com.poorcraft.client.render.texture.TextureAtlas;
+import com.poorcraft.common.config.Configuration;
 import com.poorcraft.common.util.ChunkPos;
 import com.poorcraft.common.world.chunk.Chunk;
+import org.slf4j.Logger;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.opengl.GLCapabilities;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GL33;
 
+import java.nio.FloatBuffer;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
 
 /**
  * Manages rendering of all loaded chunks.
  */
 public class ChunkRenderer {
     
-    private final Map<ChunkPos, RenderChunk> chunks;
+    private static final Logger LOGGER = com.poorcraft.common.util.Logger.getLogger(ChunkRenderer.class);
+    
+    private final Map<ChunkPos, RenderChunk> chunks = new HashMap<>();
+    private final Set<ChunkPos> renderedPositions = new HashSet<>();
     private final Camera camera;
     private final Frustum frustum;
     private final ShaderProgram shader;
     private final TextureAtlas blockAtlas;
+    private final boolean occlusionQueriesSupported;
+    private ShaderProgram boundingBoxShader;
+    private int boundingBoxVAO;
+    private int boundingBoxVBO;
+    private int boundingBoxEBO;
     
     /**
      * Creates a chunk renderer.
      */
-    public ChunkRenderer(Camera camera, ShaderProgram shader, TextureAtlas blockAtlas) {
-        this.chunks = new HashMap<>();
+    public ChunkRenderer(Camera camera, ShaderProgram shader, TextureAtlas blockAtlas, com.poorcraft.client.resource.ShaderManager shaderManager) {
         this.camera = camera;
-        this.frustum = new Frustum();
         this.shader = shader;
         this.blockAtlas = blockAtlas;
+        this.occlusionQueriesSupported = GL.getCapabilities().GL_ARB_occlusion_query;
+        
+        // Load bounding box shader
+        try {
+            this.boundingBoxShader = shaderManager.loadShader("bounding_box");
+        } catch (Exception e) {
+            LOGGER.warn("Failed to load bounding box shader, falling back to heuristic occlusion culling", e);
+            this.boundingBoxShader = null;
+        }
+        
+        // Initialize bounding box geometry for occlusion queries
+        initBoundingBoxGeometry();
     }
+    
+    /**
+     * Initializes bounding box geometry for occlusion queries.
+     * Creates a VAO/VBO/EBO for an indexed unit cube (2x2x2 centered at origin).
+     */
+    private void initBoundingBoxGeometry() {
+        // Unit cube vertices (8 corners of a 2x2x2 cube centered at origin)
+        float[] vertices = {
+            // Front face
+            -1.0f, -1.0f,  1.0f,
+             1.0f, -1.0f,  1.0f,
+             1.0f,  1.0f,  1.0f,
+            -1.0f,  1.0f,  1.0f,
+
+            // Back face
+            -1.0f, -1.0f, -1.0f,
+             1.0f, -1.0f, -1.0f,
+             1.0f,  1.0f, -1.0f,
+            -1.0f,  1.0f, -1.0f,
+        };
+
+        // Indices for triangle faces (36 indices for 12 triangles)
+        int[] indices = {
+            // Front face
+            0, 1, 2,  2, 3, 0,
+            // Right face
+            1, 5, 6,  6, 2, 1,
+            // Back face
+            5, 4, 7,  7, 6, 5,
+            // Left face
+            4, 0, 3,  3, 7, 4,
+            // Top face
+            3, 2, 6,  6, 7, 3,
+            // Bottom face
+            4, 5, 1,  1, 0, 4
+        };
+
+        // Create VAO, VBO, and EBO
+        this.boundingBoxVAO = GL30.glGenVertexArrays();
+        this.boundingBoxVBO = GL15.glGenBuffers();
+        this.boundingBoxEBO = GL15.glGenBuffers();
+
+        GL30.glBindVertexArray(boundingBoxVAO);
+
+        // VBO for vertices
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, boundingBoxVBO);
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertices, GL15.GL_STATIC_DRAW);
+
+        // EBO for indices
+        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, boundingBoxEBO);
+        GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indices, GL15.GL_STATIC_DRAW);
+
+        // Position attribute (location 0)
+        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 3 * Float.BYTES, 0);
+        GL20.glEnableVertexAttribArray(0);
+
+        // Unbind
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
+        GL30.glBindVertexArray(0);
+    }
+    
+    private enum Visibility {
+        UNKNOWN, VISIBLE, OCCLUDED
+    }
+    
+    private static class AABB {
+        final float minX, minY, minZ, maxX, maxY, maxZ;
+        
+        AABB(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+            this.minX = minX;
+            this.minY = minY;
+            this.minZ = minZ;
+            this.maxX = maxX;
+            this.maxY = maxY;
+            this.maxZ = maxZ;
+        }
+    }
+    
+    private static final int MAX_UNKNOWN_PER_FRAME = 8;
     
     /**
      * Adds a chunk to be rendered.
@@ -40,6 +153,12 @@ public class ChunkRenderer {
     public void addChunk(Chunk chunk, ChunkMesh mesh) {
         ChunkPos pos = new ChunkPos(chunk.getChunkX(), chunk.getChunkZ());
         RenderChunk renderChunk = new RenderChunk(chunk, mesh);
+        
+        // Initialize occlusion query if supported
+        if (occlusionQueriesSupported) {
+            renderChunk.queryId = GL15.glGenQueries();
+        }
+        
         chunks.put(pos, renderChunk);
     }
     
@@ -50,6 +169,10 @@ public class ChunkRenderer {
         ChunkPos pos = new ChunkPos(chunkX, chunkZ);
         RenderChunk renderChunk = chunks.remove(pos);
         if (renderChunk != null) {
+            // Delete occlusion query object if it exists
+            if (renderChunk.queryId != -1) {
+                GL15.glDeleteQueries(renderChunk.queryId);
+            }
             renderChunk.mesh.cleanup();
         }
     }
@@ -62,6 +185,8 @@ public class ChunkRenderer {
         RenderChunk renderChunk = chunks.get(pos);
         if (renderChunk != null) {
             renderChunk.needsRebuild = true;
+            // Reset visibility when chunk needs rebuild
+            renderChunk.visibility = Visibility.UNKNOWN;
         }
     }
     
@@ -101,29 +226,25 @@ public class ChunkRenderer {
         // Update frustum
         Matrix4f vp = new Matrix4f();
         camera.getProjectionMatrix().mul(camera.getViewMatrix(), vp);
-        frustum.update(vp);
+        frustum.extractPlanes(vp);
         
         // Bind shader and set uniforms
         shader.use();
-        shader.setUniform("uView", camera.getViewMatrix());
-        shader.setUniform("uProjection", camera.getProjectionMatrix());
+        shader.setMatrix4f("uView", camera.getViewMatrix());
+        shader.setMatrix4f("uProjection", camera.getProjectionMatrix());
         
         // Bind texture atlas
         blockAtlas.bind(0);
-        shader.setUniform("uBlockAtlas", 0);
-        
-        // Set lighting uniforms
-        shader.setUniform("uSunDirection", new Vector3f(0.5f, 1.0f, 0.3f).normalize());
-        shader.setUniform("uSunColor", new Vector3f(1.0f, 0.95f, 0.8f));
-        shader.setUniform("uAmbientColor", new Vector3f(0.4f, 0.4f, 0.5f));
+        shader.setInt("uBlockAtlas", 0);
         
         // Set fog uniforms
-        shader.setUniform("uFogStart", 100.0f);
-        shader.setUniform("uFogEnd", 200.0f);
-        shader.setUniform("uFogColor", new Vector3f(0.5f, 0.7f, 1.0f));
-        shader.setUniform("uCameraPos", camera.getPosition());
+        shader.setFloat("uFogStart", 100.0f);
+        shader.setFloat("uFogEnd", 200.0f);
+        shader.setVector3f("uFogColor", new Vector3f(0.5f, 0.7f, 1.0f));
+        shader.setVector3f("uCameraPos", camera.getPosition());
         
         int renderedChunks = 0;
+        int unknownChunksDrawn = 0;
         
         // Sort chunks by distance for occlusion culling (front-to-back)
         Vector3f camPos = camera.getPosition();
@@ -134,9 +255,13 @@ public class ChunkRenderer {
             return Float.compare(distA, distB);
         });
         
-        // Simple occlusion culling: track rendered chunk positions
-        // More sophisticated approach would use hardware occlusion queries
-        java.util.Set<ChunkPos> renderedPositions = new java.util.HashSet<>();
+        // Occlusion culling pass
+        if (occlusionQueriesSupported) {
+            performOcclusionQueries(sortedChunks, camPos);
+        } else {
+            // Fallback to heuristic occlusion culling
+            performHeuristicOcclusionCulling(sortedChunks, camPos);
+        }
         
         // Render visible chunks
         for (Map.Entry<ChunkPos, RenderChunk> entry : sortedChunks) {
@@ -148,31 +273,36 @@ public class ChunkRenderer {
             }
             
             // Frustum culling
-            float minX = pos.x() * 16.0f;
-            float minY = 0.0f;
-            float minZ = pos.z() * 16.0f;
-            float maxX = minX + 16.0f;
-            float maxY = 256.0f;
-            float maxZ = minZ + 16.0f;
-            
-            if (!frustum.testAABB(minX, minY, minZ, maxX, maxY, maxZ)) {
+            if (!frustum.testAABB(
+                    new Vector3f(renderChunk.bounds.minX, renderChunk.bounds.minY, renderChunk.bounds.minZ),
+                    new Vector3f(renderChunk.bounds.maxX, renderChunk.bounds.maxY, renderChunk.bounds.maxZ))) {
                 continue;
             }
             
-            // Simple occlusion culling: skip chunks that are likely occluded
-            // by closer chunks that have already been rendered
-            if (isLikelyOccluded(pos, camPos, renderedPositions)) {
+            // Occlusion culling
+            boolean shouldRender = shouldRenderChunk(renderChunk, unknownChunksDrawn);
+            if (!shouldRender) {
                 continue;
             }
             
-            // Set model matrix (chunk position)
-            Matrix4f model = new Matrix4f().translate(minX, 0, minZ);
-            shader.setUniform("uModel", model);
+            if (renderChunk.visibility == Visibility.VISIBLE) {
+                // Set model matrix (chunk position)
+                Matrix4f model = new Matrix4f().translate(renderChunk.bounds.minX, 0, renderChunk.bounds.minZ);
+                shader.setMatrix4f("uModel", model);
+                
+                // Render chunk
+                renderChunk.mesh.render();
+                renderedChunks++;
+                
+                // Mark as rendered for heuristic occlusion culling
+                if (!occlusionQueriesSupported) {
+                    markChunkAsRendered(pos);
+                }
+            }
             
-            // Render chunk
-            renderChunk.mesh.render();
-            renderedChunks++;
-            renderedPositions.add(pos);
+            if (renderChunk.visibility == Visibility.UNKNOWN) {
+                unknownChunksDrawn++;
+            }
         }
     }
     
@@ -188,9 +318,125 @@ public class ChunkRenderer {
     }
     
     /**
+     * Performs occlusion queries for all chunks that need visibility testing.
+     */
+    private void performOcclusionQueries(java.util.List<Map.Entry<ChunkPos, RenderChunk>> sortedChunks, Vector3f camPos) {
+        // Skip if bounding box shader not available
+        if (boundingBoxShader == null) {
+            return;
+        }
+
+        // Enable depth testing for occlusion queries
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glColorMask(false, false, false, false); // Disable color writes
+
+        // Bind bounding box shader and set uniforms
+        boundingBoxShader.use();
+        boundingBoxShader.setMatrix4f("uView", camera.getViewMatrix());
+        boundingBoxShader.setMatrix4f("uProjection", camera.getProjectionMatrix());
+
+        // Bind the unit cube VAO
+        GL30.glBindVertexArray(boundingBoxVAO);
+
+        for (Map.Entry<ChunkPos, RenderChunk> entry : sortedChunks) {
+            RenderChunk renderChunk = entry.getValue();
+
+            // Only test chunks that haven't been determined to be visible
+            if (renderChunk.visibility != Visibility.VISIBLE && renderChunk.queryId != -1) {
+                // Calculate model matrix for this chunk's AABB
+                Matrix4f model = new Matrix4f();
+                float scaleX = (renderChunk.bounds.maxX - renderChunk.bounds.minX) / 2.0f;
+                float scaleY = (renderChunk.bounds.maxY - renderChunk.bounds.minY) / 2.0f;
+                float scaleZ = (renderChunk.bounds.maxZ - renderChunk.bounds.minZ) / 2.0f;
+
+                model.translate(
+                    renderChunk.bounds.minX + scaleX,
+                    renderChunk.bounds.minY + scaleY,
+                    renderChunk.bounds.minZ + scaleZ
+                ).scale(scaleX, scaleY, scaleZ);
+
+                boundingBoxShader.setMatrix4f("uModel", model);
+
+                // Issue occlusion query for this chunk's bounding box
+                GL15.glBeginQuery(GL15.GL_SAMPLES_PASSED, renderChunk.queryId);
+
+                // Draw the unit cube as solid geometry (36 indices for 12 triangles)
+                GL11.glDrawElements(GL11.GL_TRIANGLES, 36, GL11.GL_UNSIGNED_INT, 0);
+
+                GL15.glEndQuery(GL15.GL_SAMPLES_PASSED);
+            }
+        }
+
+        // Unbind VAO and restore state
+        GL30.glBindVertexArray(0);
+        GL11.glColorMask(true, true, true, true);
+    }
+    /**
+     * Updates visibility states based on occlusion query results.
+     * This should be called at the beginning of each frame.
+     */
+    public void updateOcclusionResults() {
+        if (!occlusionQueriesSupported || boundingBoxShader == null) {
+            return;
+        }
+        
+        for (RenderChunk renderChunk : chunks.values()) {
+            if (renderChunk.queryId != -1 && renderChunk.visibility != Visibility.VISIBLE) {
+                int available = GL15.glGetQueryObjecti(renderChunk.queryId, GL15.GL_QUERY_RESULT_AVAILABLE);
+                if (available != 0) {
+                    int samples = GL15.glGetQueryObjecti(renderChunk.queryId, GL15.GL_QUERY_RESULT);
+                    renderChunk.visibility = (samples > 0) ? Visibility.VISIBLE : Visibility.OCCLUDED;
+                }
+            }
+        }
+    }
+    
+    /**
+     * Performs heuristic occlusion culling for systems without hardware occlusion query support.
+     */
+    private void performHeuristicOcclusionCulling(java.util.List<Map.Entry<ChunkPos, RenderChunk>> sortedChunks, Vector3f camPos) {
+        // Reset rendered positions for this frame
+        renderedPositions.clear();
+        
+        // For heuristic culling, we'll mark chunks as they get rendered
+        // The shouldRenderChunk method will handle the actual culling logic
+    }
+    
+    /**
+     * Marks a chunk as rendered for heuristic occlusion culling.
+     */
+    private void markChunkAsRendered(ChunkPos pos) {
+        renderedPositions.add(pos);
+    }
+    
+    /**
+     * Determines if a chunk should be rendered based on its visibility state.
+     */
+    private boolean shouldRenderChunk(RenderChunk renderChunk, int unknownChunksDrawn) {
+        if (occlusionQueriesSupported) {
+            // Hardware occlusion queries
+            switch (renderChunk.visibility) {
+                case VISIBLE:
+                    return true;
+                case OCCLUDED:
+                    return false;
+                case UNKNOWN:
+                    // Allow a limited number of UNKNOWN chunks to be drawn per frame
+                    return unknownChunksDrawn < MAX_UNKNOWN_PER_FRAME;
+                default:
+                    return false;
+            }
+        } else {
+            // Heuristic occlusion culling fallback
+            ChunkPos pos = new ChunkPos((int)(renderChunk.bounds.minX / 16.0f), (int)(renderChunk.bounds.minZ / 16.0f));
+            return !isLikelyOccluded(pos, camera.getPosition(), renderedPositions);
+        }
+    }
+    
+    /**
      * Simple occlusion test: checks if chunk is likely occluded by closer rendered chunks.
      */
-    private boolean isLikelyOccluded(ChunkPos pos, Vector3f camPos, java.util.Set<ChunkPos> renderedPositions) {
+    private boolean isLikelyOccluded(ChunkPos pos, Vector3f camPos, Set<ChunkPos> renderedPositions) {
         // Get direction from camera to chunk
         float chunkCenterX = pos.x() * 16.0f + 8.0f;
         float chunkCenterZ = pos.z() * 16.0f + 8.0f;
@@ -236,9 +482,23 @@ public class ChunkRenderer {
      */
     public void cleanup() {
         for (RenderChunk renderChunk : chunks.values()) {
-            renderChunk.mesh.cleanup();
+            renderChunk.cleanup();
         }
         chunks.clear();
+        
+        // Clean up bounding box geometry
+        if (boundingBoxVAO != 0) {
+            GL30.glDeleteVertexArrays(boundingBoxVAO);
+        }
+        if (boundingBoxVBO != 0) {
+            GL15.glDeleteBuffers(boundingBoxVBO);
+        }
+        if (boundingBoxEBO != 0) {
+            GL15.glDeleteBuffers(boundingBoxEBO);
+        }
+        if (boundingBoxShader != null) {
+            boundingBoxShader.close();
+        }
     }
     
     /**
@@ -248,11 +508,24 @@ public class ChunkRenderer {
         final Chunk chunk;
         final ChunkMesh mesh;
         boolean needsRebuild;
+        int queryId = -1;
+        Visibility visibility = Visibility.UNKNOWN;
+        AABB bounds;
         
         RenderChunk(Chunk chunk, ChunkMesh mesh) {
             this.chunk = chunk;
             this.mesh = mesh;
             this.needsRebuild = false;
+            this.visibility = Visibility.UNKNOWN;
+            this.bounds = new AABB(chunk.getChunkX() * 16.0f, 0.0f, chunk.getChunkZ() * 16.0f,
+                                   (chunk.getChunkX() + 1) * 16.0f, 256.0f, (chunk.getChunkZ() + 1) * 16.0f);
+        }
+        
+        void cleanup() {
+            mesh.cleanup();
+            if (queryId != -1) {
+                GL15.glDeleteQueries(queryId);
+            }
         }
     }
 }
