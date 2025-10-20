@@ -62,10 +62,31 @@ public class World implements Updatable, Renderable {
         // Initialize chunk renderer
         this.chunkRenderer = new ChunkRenderer(camera, worldShader, blockAtlas);
         
-        // Initialize chunk loader
-        this.chunkLoader = new ChunkLoader(config, terrainGenerator, chunkRenderer);
+        // Initialize chunk loader with texture lookup function
+        this.chunkLoader = new ChunkLoader(config, terrainGenerator, chunkRenderer, this::getTextureLayer);
         
         LOGGER.info("World initialized successfully");
+    }
+    
+    /**
+     * Creates a 1x1 transparent texture for AIR block.
+     */
+    private java.nio.file.Path createTransparentTexture() {
+        try {
+            java.nio.file.Path tempFile = java.nio.file.Files.createTempFile("air_texture", ".png");
+            tempFile.toFile().deleteOnExit();
+            
+            // Create a 1x1 transparent image using BufferedImage
+            java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            // Image is already transparent by default
+            
+            // Write to file
+            javax.imageio.ImageIO.write(img, "PNG", tempFile.toFile());
+            return tempFile;
+        } catch (Exception e) {
+            LOGGER.error("Failed to create transparent texture for AIR", e);
+            throw new RuntimeException("Failed to create AIR texture", e);
+        }
     }
     
     /**
@@ -73,8 +94,10 @@ public class World implements Updatable, Renderable {
      */
     private void loadBlockTextures(TextureManager textureManager) {
         try {
-            // Load textures in order matching block IDs
-            blockAtlas.addTexture("air", null); // 0 - Air (no texture)
+            // Reserve layer 0 for AIR - add a 1x1 transparent texture
+            // Create a temporary 1x1 transparent PNG for AIR
+            java.nio.file.Path airTexturePath = createTransparentTexture();
+            blockAtlas.addTexture("air", airTexturePath);
             blockAtlas.addTexture("stone", textureManager.loadTexture("textures/blocks/stone.png"));
             blockAtlas.addTexture("dirt", textureManager.loadTexture("textures/blocks/dirt.png"));
             blockAtlas.addTexture("grass_top", textureManager.loadTexture("textures/blocks/grass_top.png"));

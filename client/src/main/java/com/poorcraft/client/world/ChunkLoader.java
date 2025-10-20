@@ -6,9 +6,9 @@ import com.poorcraft.common.world.chunk.Chunk;
 import com.poorcraft.common.world.gen.TerrainGenerator;
 import org.slf4j.Logger;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.function.Function;
 
 /**
  * Manages chunk loading/unloading based on view distance.
@@ -24,25 +24,29 @@ public class ChunkLoader {
     private final ExecutorService meshingThreads;
     private final TerrainGenerator terrainGenerator;
     private final ChunkRenderer chunkRenderer;
+    private final Function<String, Integer> textureLayerLookup;
     private final int renderDistance;
+    private final int genThreads;
+    private final int meshThreads;
     private int lastPlayerChunkX;
     private int lastPlayerChunkZ;
     
     /**
      * Creates a chunk loader.
      */
-    public ChunkLoader(Configuration config, TerrainGenerator terrainGenerator, ChunkRenderer chunkRenderer) {
-        this.loadedChunks = new HashMap<>();
+    public ChunkLoader(Configuration config, TerrainGenerator terrainGenerator, ChunkRenderer chunkRenderer, Function<String, Integer> textureLayerLookup) {
+        this.loadedChunks = new ConcurrentHashMap<>();
         this.generationQueue = new LinkedBlockingQueue<>();
         this.meshingQueue = new LinkedBlockingQueue<>();
         this.terrainGenerator = terrainGenerator;
         this.chunkRenderer = chunkRenderer;
+        this.textureLayerLookup = textureLayerLookup;
         this.renderDistance = config.getInt("game.renderDistance", 8);
         this.lastPlayerChunkX = Integer.MAX_VALUE;
         this.lastPlayerChunkZ = Integer.MAX_VALUE;
         
-        int genThreads = config.getInt("world.generationThreads", 4);
-        int meshThreads = config.getInt("world.meshingThreads", 2);
+        this.genThreads = config.getInt("world.generationThreads", 4);
+        this.meshThreads = config.getInt("world.meshingThreads", 2);
         
         this.generationThreads = Executors.newFixedThreadPool(genThreads, r -> {
             Thread t = new Thread(r, "ChunkGeneration");
@@ -114,7 +118,7 @@ public class ChunkLoader {
      */
     private void startWorkers() {
         // Generation workers
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < genThreads; i++) {
             generationThreads.submit(() -> {
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
@@ -131,7 +135,7 @@ public class ChunkLoader {
         }
         
         // Meshing workers
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < meshThreads; i++) {
             meshingThreads.submit(() -> {
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
@@ -174,15 +178,13 @@ public class ChunkLoader {
             neighbors[2] = loadedChunks.get(new ChunkPos(chunk.getChunkX() + 1, chunk.getChunkZ())); // East
             neighbors[3] = loadedChunks.get(new ChunkPos(chunk.getChunkX() - 1, chunk.getChunkZ())); // West
             
-            ChunkMesher mesher = new ChunkMesher(chunk, neighbors);
+            ChunkMesher mesher = new ChunkMesher(chunk, neighbors, textureLayerLookup);
             ChunkMesh mesh = mesher.mesh();
             
             // Store mesh for upload on main thread
             chunk.setModified(false); // Use modified flag to indicate mesh is ready
-            synchronized (loadedChunks) {
-                // Add to a queue for main thread processing
-                pendingMeshes.put(new ChunkPos(chunk.getChunkX(), chunk.getChunkZ()), mesh);
-            }
+            // Add to a queue for main thread processing
+            pendingMeshes.put(new ChunkPos(chunk.getChunkX(), chunk.getChunkZ()), mesh);
         } catch (Exception e) {
             LOGGER.error("Error meshing chunk [{}, {}]: {}", 
                         chunk.getChunkX(), chunk.getChunkZ(), e.getMessage(), e);
@@ -224,6 +226,22 @@ public class ChunkLoader {
      */
     public Chunk getChunk(int chunkX, int chunkZ) {
         return loadedChunks.get(new ChunkPos(chunkX, chunkZ));
+    }
+    
+    /**
+     * Requests a chunk to be re-meshed after block edits.
+     * 
+     * @param chunkX Chunk X coordinate
+     * @param chunkZ Chunk Z coordinate
+     */
+    public void requestRemesh(int chunkX, int chunkZ) {
+        Chunk chunk = loadedChunks.get(new ChunkPos(chunkX, chunkZ));
+        if (chunk != null) {
+            // Remove old mesh from pending if it exists
+            pendingMeshes.remove(new ChunkPos(chunkX, chunkZ));
+            // Enqueue for re-meshing
+            meshingQueue.offer(chunk);
+        }
     }
     
     /**

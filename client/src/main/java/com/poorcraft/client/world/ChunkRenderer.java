@@ -112,8 +112,21 @@ public class ChunkRenderer {
         
         int renderedChunks = 0;
         
+        // Sort chunks by distance for occlusion culling (front-to-back)
+        Vector3f camPos = camera.getPosition();
+        java.util.List<Map.Entry<ChunkPos, RenderChunk>> sortedChunks = new java.util.ArrayList<>(chunks.entrySet());
+        sortedChunks.sort((a, b) -> {
+            float distA = getChunkDistanceSquared(a.getKey(), camPos);
+            float distB = getChunkDistanceSquared(b.getKey(), camPos);
+            return Float.compare(distA, distB);
+        });
+        
+        // Simple occlusion culling: track rendered chunk positions
+        // More sophisticated approach would use hardware occlusion queries
+        java.util.Set<ChunkPos> renderedPositions = new java.util.HashSet<>();
+        
         // Render visible chunks
-        for (Map.Entry<ChunkPos, RenderChunk> entry : chunks.entrySet()) {
+        for (Map.Entry<ChunkPos, RenderChunk> entry : sortedChunks) {
             ChunkPos pos = entry.getKey();
             RenderChunk renderChunk = entry.getValue();
             
@@ -133,6 +146,12 @@ public class ChunkRenderer {
                 continue;
             }
             
+            // Simple occlusion culling: skip chunks that are likely occluded
+            // by closer chunks that have already been rendered
+            if (isLikelyOccluded(pos, camPos, renderedPositions)) {
+                continue;
+            }
+            
             // Set model matrix (chunk position)
             Matrix4f model = new Matrix4f().translate(minX, 0, minZ);
             shader.setUniform("uModel", model);
@@ -140,7 +159,56 @@ public class ChunkRenderer {
             // Render chunk
             renderChunk.mesh.render();
             renderedChunks++;
+            renderedPositions.add(pos);
         }
+    }
+    
+    /**
+     * Calculates squared distance from camera to chunk center.
+     */
+    private float getChunkDistanceSquared(ChunkPos pos, Vector3f camPos) {
+        float chunkCenterX = pos.x() * 16.0f + 8.0f;
+        float chunkCenterZ = pos.z() * 16.0f + 8.0f;
+        float dx = chunkCenterX - camPos.x;
+        float dz = chunkCenterZ - camPos.z;
+        return dx * dx + dz * dz;
+    }
+    
+    /**
+     * Simple occlusion test: checks if chunk is likely occluded by closer rendered chunks.
+     */
+    private boolean isLikelyOccluded(ChunkPos pos, Vector3f camPos, java.util.Set<ChunkPos> renderedPositions) {
+        // Get direction from camera to chunk
+        float chunkCenterX = pos.x() * 16.0f + 8.0f;
+        float chunkCenterZ = pos.z() * 16.0f + 8.0f;
+        float dx = chunkCenterX - camPos.x;
+        float dz = chunkCenterZ - camPos.z;
+        float dist = (float) Math.sqrt(dx * dx + dz * dz);
+        
+        if (dist < 32.0f) {
+            return false; // Don't occlude very close chunks
+        }
+        
+        // Normalize direction
+        float ndx = dx / dist;
+        float ndz = dz / dist;
+        
+        // Check if there's a rendered chunk in front of this one along the view direction
+        for (int step = 1; step < 4; step++) {
+            int testX = (int) Math.floor((camPos.x + ndx * step * 16.0f) / 16.0f);
+            int testZ = (int) Math.floor((camPos.z + ndz * step * 16.0f) / 16.0f);
+            ChunkPos testPos = new ChunkPos(testX, testZ);
+            
+            if (testPos.equals(pos)) {
+                break;
+            }
+            
+            if (renderedPositions.contains(testPos)) {
+                return true; // Likely occluded by this chunk
+            }
+        }
+        
+        return false;
     }
     
     /**

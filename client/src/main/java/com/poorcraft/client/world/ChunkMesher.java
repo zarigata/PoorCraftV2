@@ -29,10 +29,12 @@ public class ChunkMesher {
      * 
      * @param chunk Chunk to mesh
      * @param neighbors Neighbor chunks [N, S, E, W] for seamless meshing
+     * @param textureLayerLookup Function to lookup texture layer by name
      */
-    public ChunkMesher(Chunk chunk, Chunk[] neighbors) {
+    public ChunkMesher(Chunk chunk, Chunk[] neighbors, Function<String, Integer> textureLayerLookup) {
         this.chunk = chunk;
         this.neighbors = neighbors;
+        this.textureLayerLookup = textureLayerLookup;
     }
     
     /**
@@ -217,8 +219,9 @@ public class ChunkMesher {
     }
     
     private float getTextureLayer(BlockType block, int face) {
-        // Simplified texture mapping - returns block ID as layer
-        // In a real implementation, this would map to texture atlas indices
-        return block.getId();
+        // Get face-specific texture name from block
+        String textureName = block.getTextureName(face);
+        // Lookup texture layer index
+        return textureLayerLookup.apply(textureName);
     }
 }

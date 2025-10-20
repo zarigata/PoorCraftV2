@@ -133,7 +133,7 @@ public class TerrainGenerator {
     }
     
     /**
-     * Generates features like trees.
+     * Generates features like trees and structures.
      * 
      * @param chunk Chunk to add features to
      */
@@ -144,6 +144,19 @@ public class TerrainGenerator {
         // Use a different seed offset for feature placement
         long featureSeed = seed + chunkX * 341873128712L + chunkZ * 132897987541L;
         java.util.Random random = new java.util.Random(featureSeed);
+        
+        // Try to place a structure (rare)
+        if (random.nextDouble() < 0.005) { // 0.5% chance per chunk
+            int x = 4 + random.nextInt(8);
+            int z = 4 + random.nextInt(8);
+            int height = chunk.getHeight(x, z);
+            BiomeType biome = BiomeType.getById(chunk.getBiome(x, z));
+            
+            // Only place structures on flat plains above water
+            if (height > Constants.World.SEA_LEVEL && biome == BiomeType.PLAINS) {
+                placeStructure(chunk, x, height + 1, z, random);
+            }
+        }
         
         for (int x = 2; x < 14; x++) { // Avoid chunk edges
             for (int z = 2; z < 14; z++) {
@@ -157,6 +170,58 @@ public class TerrainGenerator {
                         placeTree(chunk, x, height + 1, z, biome);
                     }
                 }
+            }
+        }
+    }
+    
+    /**
+     * Places a simple structure (small house).
+     * 
+     * @param chunk Chunk to place structure in
+     * @param x Local X coordinate
+     * @param y Base Y coordinate
+     * @param z Local Z coordinate
+     * @param random Random generator
+     */
+    private void placeStructure(Chunk chunk, int x, int y, int z, java.util.Random random) {
+        // Simple 5x5x4 house structure
+        int width = 5;
+        int depth = 5;
+        int height = 4;
+        
+        // Check if structure fits in chunk
+        if (x + width > 16 || z + depth > 16 || y + height > Constants.World.CHUNK_SIZE_Y) {
+            return;
+        }
+        
+        // Build floor
+        for (int dx = 0; dx < width; dx++) {
+            for (int dz = 0; dz < depth; dz++) {
+                chunk.setBlock(x + dx, y - 1, z + dz, BlockType.WOOD.getId());
+            }
+        }
+        
+        // Build walls
+        for (int dy = 0; dy < height; dy++) {
+            for (int dx = 0; dx < width; dx++) {
+                for (int dz = 0; dz < depth; dz++) {
+                    boolean isWall = (dx == 0 || dx == width - 1 || dz == 0 || dz == depth - 1);
+                    boolean isDoor = (dy < 2 && dx == width / 2 && dz == 0);
+                    
+                    if (isWall && !isDoor) {
+                        chunk.setBlock(x + dx, y + dy, z + dz, BlockType.WOOD.getId());
+                    } else if (!isWall) {
+                        // Clear interior
+                        chunk.setBlock(x + dx, y + dy, z + dz, BlockType.AIR.getId());
+                    }
+                }
+            }
+        }
+        
+        // Build roof
+        for (int dx = 0; dx < width; dx++) {
+            for (int dz = 0; dz < depth; dz++) {
+                chunk.setBlock(x + dx, y + height, z + dz, BlockType.WOOD.getId());
             }
         }
     }
