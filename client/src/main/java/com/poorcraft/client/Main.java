@@ -1,26 +1,46 @@
 package com.poorcraft.client;
 
+import com.poorcraft.client.input.InputManager;
+import com.poorcraft.client.render.GLInfo;
+import com.poorcraft.client.render.Renderer;
+import com.poorcraft.client.render.camera.Camera;
+import com.poorcraft.client.resource.FileWatcher;
+import com.poorcraft.client.resource.ShaderManager;
+import com.poorcraft.client.resource.TextureManager;
+import com.poorcraft.client.window.Window;
+import com.poorcraft.client.world.World;
 import com.poorcraft.common.Constants;
 import com.poorcraft.common.config.Configuration;
 import com.poorcraft.core.Engine;
 import org.slf4j.Logger;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
 
 /**
  * Main entry point for the PoorCraft client application.
  * 
- * <p>This is a placeholder implementation for Phase 1. Phase 2 will add:
- * <ul>
- *   <li>GLFW window creation</li>
- *   <li>OpenGL context initialization</li>
- *   <li>Integration with Engine game loop</li>
- *   <li>Input handling setup</li>
- * </ul>
+ * <p>Phase 2 implementation with full rendering engine, game loop, and input handling.
  */
 public class Main {
     private static final Logger LOGGER = com.poorcraft.common.util.Logger.getLogger(Main.class);
+    
+    private static Window window;
+    private static InputManager inputManager;
+    private static ShaderManager shaderManager;
+    private static TextureManager textureManager;
+    private static FileWatcher shaderWatcher;
+    private static FileWatcher textureWatcher;
+    private static Engine engine;
+    private static Renderer renderer;
+    private static World world;
+    private static final AtomicBoolean cleanupExecuted = new AtomicBoolean(false);
     
     public static void main(String[] args) {
         LOGGER.info("=== {} v{} ===", Constants.Game.NAME, Constants.Game.VERSION);
@@ -34,6 +54,7 @@ public class Main {
         // Add shutdown hook for graceful cleanup
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOGGER.info("Shutting down client...");
+            cleanup();
         }, "Shutdown-Hook"));
         
         try {
@@ -44,36 +65,215 @@ public class Main {
             } catch (IOException e) {
                 LOGGER.warn("Could not load client configuration, using defaults", e);
                 config = new Configuration();
+                config.loadDefaults();
             }
             
             LOGGER.info("Client starting...");
             
-            // Initialize engine
-            Engine engine = new Engine();
-            engine.init();
+            // Create window and OpenGL context
+            window = new Window(config);
             
-            // TODO Phase 2: Initialize GLFW
-            // TODO Phase 2: Create window
-            // TODO Phase 2: Initialize OpenGL context
-            // TODO Phase 2: Setup input callbacks
-            // TODO Phase 2: Start engine game loop
+            // Detect and log OpenGL capabilities
+            GLInfo capabilities = new GLInfo();
+            capabilities.printCapabilities();
             
-            LOGGER.info("Client initialization complete");
-            LOGGER.info("Press Ctrl+C to stop (game loop not yet implemented)");
+            // Create input manager
+            inputManager = new InputManager(window.getHandle(), config);
             
-            // Placeholder: Keep application running
-            // In Phase 2, this will be replaced by the game loop
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            // Create camera
+            Camera camera = new Camera();
+            camera.setPosition(0.0f, 80.0f, 0.0f);
+            camera.setPerspective(
+                config.getFloat("game.fov", Constants.Rendering.DEFAULT_FOV),
+                (float) window.getWidth() / window.getHeight(),
+                Constants.Rendering.DEFAULT_NEAR_PLANE,
+                Constants.Rendering.DEFAULT_FAR_PLANE
+            );
+            
+            // Configure reverse-Z if supported and enabled
+            boolean useReverseZ = config.getBoolean("graphics.useReverseZ", false);
+            if (useReverseZ && capabilities.hasClipControl()) {
+                camera.setReverseZ(true);
+                // Set clip control for reverse-Z (requires OpenGL 4.5+)
+                org.lwjgl.opengl.GL45.glClipControl(
+                    org.lwjgl.opengl.GL20.GL_LOWER_LEFT,
+                    org.lwjgl.opengl.GL45.GL_ZERO_TO_ONE
+                );
+                LOGGER.info("Reverse-Z depth enabled");
+            } else if (useReverseZ) {
+                LOGGER.warn("Reverse-Z requested but GL_ARB_clip_control not supported");
             }
             
+            // Create resource managers
+            shaderManager = new ShaderManager(config);
+            textureManager = new TextureManager(config, capabilities);
+            
+            // Setup file watchers for hot-reload
+            if (config.getBoolean("resources.hotReload", true)) {
+                setupFileWatchers(config);
+            }
+            
+            // Load test resources
+            try {
+                shaderManager.loadShader("basic");
+                LOGGER.info("Loaded basic shader");
+            } catch (IOException e) {
+                LOGGER.error("Failed to load basic shader", e);
+            }
+            
+            try {
+                textureManager.loadTexture("test.png");
+                LOGGER.info("Loaded test texture");
+            } catch (IOException e) {
+                LOGGER.warn("Failed to load test texture, using fallback", e);
+            }
+            
+            // Create world
+            world = new World(config.getLong("world.seed", 0L), config, camera, shaderManager, textureManager);
+            
+            // Create renderer
+            renderer = new Renderer(camera, shaderManager, textureManager, window);
+            renderer.init();
+            
+            // Add window resize listener
+            window.addResizeListener((width, height) -> renderer.resize(width, height));
+            
+            // Initialize engine
+            engine = new Engine();
+            engine.init();
+            
+            // Register world with engine
+            engine.registerUpdatable(world);
+            engine.registerRenderable(world);
+            
+            // Register renderer with engine (for UI/HUD in future)
+            // engine.registerRenderable(renderer);
+            
+            // Set up event polling callback
+            engine.setPollEventsCallback(() -> {
+                // Clear edge states before polling new events
+                inputManager.newFrame();
+                
+                // Poll events (triggers callbacks that set edge states)
+                window.pollEvents();
+                
+                // Check for escape key to close
+                if (inputManager.keyPressed(GLFW_KEY_ESCAPE)) {
+                    engine.stop();
+                }
+                
+                // Check if window should close
+                if (window.shouldClose()) {
+                    engine.stop();
+                }
+            });
+            
+            // Set up post-render callback to swap buffers
+            engine.setPostRenderCallback(window::swapBuffers);
+            
+            LOGGER.info("Client initialization complete");
+            LOGGER.info("Press ESC to exit");
+            
+            // Start engine game loop (blocking)
+            engine.start();
+            
             LOGGER.info("Client stopped");
+            cleanup();
             
         } catch (Exception e) {
             LOGGER.error("Fatal error in client", e);
+            cleanup();
             System.exit(1);
         }
+    }
+    
+    /**
+     * Sets up file watchers for hot-reloading resources.
+     */
+    private static void setupFileWatchers(Configuration config) {
+        try {
+            int debounceMs = config.getInt("resources.watchDebounceMs", 150);
+            Duration debounce = Duration.ofMillis(debounceMs);
+            
+            // Shader watcher
+            Path shaderPath = Path.of(config.getString("resources.shaderPath", "shaders"));
+            shaderWatcher = new FileWatcher(
+                shaderPath,
+                false,
+                debounce,
+                Set.of("vert", "frag", "glsl"),
+                Set.of(".tmp", ".swp", ".DS_Store", "~"),
+                (path, kind) -> {
+                    LOGGER.info("Shader file changed: {} ({})", path, kind);
+                    // Trigger shader reload
+                    String filename = path.getFileName().toString();
+                    String baseName = filename.substring(0, filename.lastIndexOf('.'));
+                    try {
+                        shaderManager.reloadShader(baseName);
+                    } catch (IOException e) {
+                        LOGGER.error("Failed to reload shader: {}", baseName, e);
+                    }
+                }
+            );
+            
+            // Texture watcher
+            Path texturePath = Path.of(config.getString("resources.texturePath", "textures"));
+            textureWatcher = new FileWatcher(
+                texturePath,
+                false,
+                debounce,
+                Set.of("png", "jpg", "jpeg"),
+                Set.of(".tmp", ".swp", ".DS_Store", "~"),
+                (path, kind) -> {
+                    LOGGER.info("Texture file changed: {} ({})", path, kind);
+                    // Trigger texture reload
+                    String filename = path.getFileName().toString();
+                    try {
+                        textureManager.reloadTexture(filename);
+                    } catch (IOException e) {
+                        LOGGER.error("Failed to reload texture: {}", filename, e);
+                    }
+                }
+            );
+            
+            LOGGER.info("Hot-reload file watchers enabled");
+        } catch (IOException e) {
+            LOGGER.warn("Failed to setup file watchers, hot-reload disabled", e);
+        }
+    }
+    
+    /**
+     * Cleans up all resources.
+     */
+    private static void cleanup() {
+        // Guard against double cleanup
+        if (!cleanupExecuted.compareAndSet(false, true)) {
+            return;
+        }
+        if (world != null) {
+            world.cleanup();
+        }
+        if (renderer != null) {
+            renderer.cleanup();
+        }
+        if (shaderWatcher != null) {
+            shaderWatcher.close();
+        }
+        if (textureWatcher != null) {
+            textureWatcher.close();
+        }
+        if (shaderManager != null) {
+            shaderManager.close();
+        }
+        if (textureManager != null) {
+            textureManager.close();
+        }
+        if (inputManager != null) {
+            inputManager.close();
+        }
+        if (window != null) {
+            window.close();
+        }
+        LOGGER.info("Cleanup complete");
     }
 }

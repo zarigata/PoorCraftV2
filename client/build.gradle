@@ -9,6 +9,9 @@ dependencies {
     implementation project(':common')
     implementation project(':core')
     
+    // JOML - Java OpenGL Math Library
+    implementation "org.joml:joml:1.10.5"
+    
     // LWJGL core
     implementation platform("org.lwjgl:lwjgl-bom:${lwjglVersion}")
     implementation "org.lwjgl:lwjgl"

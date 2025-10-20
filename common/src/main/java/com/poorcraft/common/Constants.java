@@ -31,8 +31,47 @@ public final class Constants {
         public static final int MIN_RENDER_DISTANCE = 2;
         public static final int MAX_RENDER_DISTANCE = 32;
         public static final int DEFAULT_RENDER_DISTANCE = 8;
+        public static final int CHUNK_SECTION_SIZE = 16;
+        public static final int SECTIONS_PER_CHUNK = CHUNK_SIZE_Y / CHUNK_SECTION_SIZE;
+        public static final int BLOCKS_PER_CHUNK = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z;
+        public static final int MIN_PALETTE_BITS = 4;
+        public static final int MAX_PALETTE_BITS = 15;
+        public static final int DIRECT_PALETTE_THRESHOLD = 256;
         
         private World() {}
+    }
+    
+    /**
+     * Block ID constants.
+     */
+    public static final class Blocks {
+        public static final int AIR_ID = 0;
+        public static final int STONE_ID = 1;
+        public static final int DIRT_ID = 2;
+        public static final int GRASS_ID = 3;
+        public static final int SAND_ID = 4;
+        public static final int SANDSTONE_ID = 5;
+        public static final int SNOW_ID = 6;
+        public static final int ICE_ID = 7;
+        public static final int WOOD_ID = 8;
+        public static final int LEAVES_ID = 9;
+        public static final int WATER_ID = 10;
+        
+        private Blocks() {}
+    }
+    
+    /**
+     * Biome ID constants.
+     */
+    public static final class Biomes {
+        public static final int PLAINS_ID = 0;
+        public static final int DESERT_ID = 1;
+        public static final int MOUNTAINS_ID = 2;
+        public static final int SNOW_ID = 3;
+        public static final int JUNGLE_ID = 4;
+        public static final int BIOME_COUNT = 5;
+        
+        private Biomes() {}
     }
     
     /**
@@ -84,5 +123,34 @@ public final class Constants {
         public static final int COMPRESSION_THRESHOLD = 256;
         
         private Network() {}
+    }
+    
+    /**
+     * Rendering-related constants.
+     */
+    public static final class Rendering {
+        public static final int TARGET_UPS = 60;
+        public static final double FIXED_TIMESTEP = 1.0 / 60.0;
+        public static final double MAX_FRAME_TIME = 0.25;
+        public static final float DEFAULT_FOV = 70.0f;
+        public static final float DEFAULT_NEAR_PLANE = 0.1f;
+        public static final float DEFAULT_FAR_PLANE = 1000.0f;
+        public static final int OPENGL_MAJOR = 3;
+        public static final int OPENGL_MINOR = 3;
+        
+        private Rendering() {}
+    }
+    
+    /**
+     * Input-related constants.
+     */
+    public static final class Input {
+        public static final int MOUSE_BUTTON_LEFT = 0;
+        public static final int MOUSE_BUTTON_RIGHT = 1;
+        public static final int MOUSE_BUTTON_MIDDLE = 2;
+        public static final int MAX_GAMEPADS = 4;
+        public static final float DEFAULT_DEADZONE = 0.25f;
+        
+        private Input() {}
     }
 }

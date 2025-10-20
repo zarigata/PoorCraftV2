@@ -4,14 +4,6 @@ game:
   language: en_US
   renderDistance: 8
   fov: 70
-  mouseSensitivity: 1.0
-
-graphics:
-  vsync: true
-  maxFps: 60
-  quality: medium
-  shadows: true
-  particles: all
 
 audio:
   masterVolume: 1.0
@@ -28,7 +20,50 @@ world:
   gameMode: survival
   difficulty: normal
   spawnProtectionRadius: 16
+  generationThreads: 4
+  meshingThreads: 2
+  noiseScale: 0.003
+  noiseOctaves: 6
+  noiseLacunarity: 2.0
+  noiseGain: 0.5
+  baseHeight: 64
+  heightVariation: 32
+  biomeScale: 0.001
+  biomeBlendRadius: 16.0
+  treeChance: 0.02
 
 mods:
   directory: mods
   autoDownload: false
+
+window:
+  width: 1280
+  height: 720
+  fullscreen: false
+  vsync: true
+  resizable: true
+  title: PoorCraft
+
+graphics:
+  maxFps: 60
+  quality: medium
+  shadows: true
+  particles: all
+  openglVersion: "3.3"
+  useDSA: true
+  useReverseZ: false
+  anisotropicFiltering: 8
+  msaaSamples: 4
+  flipTextures: true
+
+input:
+  mouseSensitivity: 1.0
+  invertY: false
+  rawMouseMotion: true
+  gamepadDeadzone: 0.25
+
+resources:
+  hotReload: true
+  watchDebounceMs: 150
+  shaderPath: shaders
+  texturePath: textures
