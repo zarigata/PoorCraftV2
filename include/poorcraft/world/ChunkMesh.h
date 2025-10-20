@@ -30,6 +30,8 @@ struct BlockVertex {
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec2 uv;
+    uint8_t light; // Packed: (skyLight << 4) | blockLight
+    uint8_t ao;    // Ambient occlusion factor (0-3)
 };
 
 class ChunkMesh {
@@ -66,6 +68,21 @@ private:
                                    int32_t x,
                                    int32_t y,
                                    int32_t z) const;
+
+    uint8_t calculateVertexLight(const Chunk& chunk,
+                                  ChunkManager& manager,
+                                  int32_t x,
+                                  int32_t y,
+                                  int32_t z) const;
+
+    uint8_t calculateVertexAO(const Chunk& chunk,
+                              ChunkManager& manager,
+                              int32_t x,
+                              int32_t y,
+                              int32_t z,
+                              const glm::vec3& normal) const;
+
+    static uint8_t packLight(uint8_t skyLight, uint8_t blockLight);
 
     static glm::vec3 getNormal(MeshFaceDirection face);
     static glm::vec3 getUAxis(MeshFaceDirection face);

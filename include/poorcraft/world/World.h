@@ -8,6 +8,7 @@
 #include "poorcraft/world/Frustum.h"
 
 #include <memory>
+#include <glm/vec3.hpp>
 
 namespace PoorCraft {
 
@@ -26,7 +27,7 @@ public:
     bool initialize(int renderDistance);
     void shutdown();
 
-    void update(const glm::vec3& cameraPosition, int renderDistance);
+    void update(const glm::vec3& cameraPosition, int renderDistance, float deltaTime);
     void render(const Camera& camera, Shader& shader);
 
     ChunkManager& getChunkManager();
@@ -34,6 +35,14 @@ public:
     TextureAtlas& getTextureAtlas();
 
     [[nodiscard]] const WorldRenderStats& getRenderStats() const;
+    
+    // Time-of-day system
+    [[nodiscard]] float getTimeOfDay() const;
+    void setTimeOfDay(float time);
+    [[nodiscard]] glm::vec3 getSunDirection() const;
+    [[nodiscard]] glm::vec3 getSunColor() const;
+    [[nodiscard]] glm::vec3 getMoonDirection() const;
+    [[nodiscard]] glm::vec3 getSkyColor() const;
     
     // Block manipulation with event publication
     bool setBlockAt(int32_t worldX, int32_t worldY, int32_t worldZ, uint16_t blockId, uint32_t playerId = 0);
@@ -44,6 +53,9 @@ private:
 
     std::unique_ptr<ChunkManager> chunkManager;
     std::unique_ptr<TextureAtlas> textureAtlas;
+
+    float timeOfDay;
+    float dayNightCycleSpeed;
 
     WorldRenderStats renderStats;
 };

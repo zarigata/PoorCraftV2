@@ -13,14 +13,11 @@ uniform sampler2D blockAtlas;
 uniform vec3 sunDirection;
 uniform vec3 sunColor;
 uniform float ambientStrength;
+uniform vec4 waterColor;
 
 void main()
 {
     vec4 texColor = texture(blockAtlas, TexCoord);
-    if (texColor.a < 0.1)
-    {
-        discard;
-    }
     
     // Calculate lighting
     float ambient = max(SkyLight, ambientStrength);
@@ -30,5 +27,7 @@ void main()
     float totalLight = ambient + diffuse + emissive;
     totalLight *= AO;
     
-    FragColor = texColor * vec4(sunColor * totalLight, 1.0);
+    // Apply water tint and transparency
+    vec3 finalColor = texColor.rgb * waterColor.rgb * sunColor * totalLight;
+    FragColor = vec4(finalColor, waterColor.a);
 }

@@ -5,8 +5,10 @@
 namespace PoorCraft {
 
 Chunk::Chunk(const ChunkCoord& chunkPosition)
-    : position(chunkPosition), blocks(), dirty(true), blockCount(0) {
+    : position(chunkPosition), blocks(), skyLight(), blockLight(), dirty(true), blockCount(0) {
     blocks.fill(0);
+    skyLight.fill(15);  // Initialize with full sunlight
+    blockLight.fill(0); // Initialize with no emissive light
 }
 
 uint16_t Chunk::getBlock(int32_t x, int32_t y, int32_t z) const {
@@ -84,6 +86,50 @@ bool Chunk::isValidPosition(int32_t x, int32_t y, int32_t z) {
 
 int32_t Chunk::getIndex(int32_t x, int32_t y, int32_t z) {
     return x + (z * CHUNK_SIZE_X) + (y * CHUNK_SIZE_X * CHUNK_SIZE_Z);
+}
+
+uint8_t Chunk::getSkyLight(int32_t x, int32_t y, int32_t z) const {
+    if (!isValidPosition(x, y, z)) {
+        return 0;
+    }
+    return skyLight[static_cast<size_t>(getIndex(x, y, z))];
+}
+
+uint8_t Chunk::getBlockLight(int32_t x, int32_t y, int32_t z) const {
+    if (!isValidPosition(x, y, z)) {
+        return 0;
+    }
+    return blockLight[static_cast<size_t>(getIndex(x, y, z))];
+}
+
+void Chunk::setSkyLight(int32_t x, int32_t y, int32_t z, uint8_t level) {
+    if (!isValidPosition(x, y, z)) {
+        return;
+    }
+    skyLight[static_cast<size_t>(getIndex(x, y, z))] = level;
+    dirty = true;
+}
+
+void Chunk::setBlockLight(int32_t x, int32_t y, int32_t z, uint8_t level) {
+    if (!isValidPosition(x, y, z)) {
+        return;
+    }
+    blockLight[static_cast<size_t>(getIndex(x, y, z))] = level;
+    dirty = true;
+}
+
+uint8_t Chunk::getLightLevel(int32_t x, int32_t y, int32_t z) const {
+    return std::max(getSkyLight(x, y, z), getBlockLight(x, y, z));
+}
+
+void Chunk::fillSkyLight(uint8_t level) {
+    skyLight.fill(level);
+    dirty = true;
+}
+
+void Chunk::fillBlockLight(uint8_t level) {
+    blockLight.fill(level);
+    dirty = true;
 }
 
 } // namespace PoorCraft

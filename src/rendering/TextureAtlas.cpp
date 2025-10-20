@@ -95,6 +95,15 @@ bool TextureAtlas::build() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glGenerateMipmap(GL_TEXTURE_2D);
+    
+    // Enable anisotropic filtering if supported
+    if (GLAD_GL_EXT_texture_filter_anisotropic) {
+        GLfloat maxAniso = 0.0f;
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAniso);
+        PC_DEBUGF("Texture atlas anisotropic filtering enabled: %.1fx", maxAniso);
+    }
+    
     Texture::unbind();
 
     PC_INFOF("Texture atlas built with %zu textures", m_Entries.size());

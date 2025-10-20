@@ -368,6 +368,30 @@ public:
         static constexpr const char* HOT_RELOAD_INTERVAL_KEY = "Mods.hot_reload_interval";
     };
 
+    /**
+     * @brief Rendering configuration section
+     */
+    struct RenderingConfig {
+        static constexpr const char* SECTION = "Rendering";
+        static constexpr const char* ENABLE_LIGHTING_KEY = "Rendering.enable_lighting";
+        static constexpr const char* ENABLE_SMOOTH_LIGHTING_KEY = "Rendering.enable_smooth_lighting";
+        static constexpr const char* AMBIENT_LIGHT_LEVEL_KEY = "Rendering.ambient_light_level";
+        static constexpr const char* ENABLE_DAY_NIGHT_CYCLE_KEY = "Rendering.enable_day_night_cycle";
+        static constexpr const char* DAY_NIGHT_CYCLE_SPEED_KEY = "Rendering.day_night_cycle_speed";
+        static constexpr const char* STARTING_TIME_KEY = "Rendering.starting_time";
+        static constexpr const char* ENABLE_WATER_ANIMATION_KEY = "Rendering.enable_water_animation";
+        static constexpr const char* WATER_WAVE_SPEED_KEY = "Rendering.water_wave_speed";
+        static constexpr const char* WATER_TRANSPARENCY_KEY = "Rendering.water_transparency";
+        static constexpr const char* ENABLE_PARTICLES_KEY = "Rendering.enable_particles";
+        static constexpr const char* MAX_PARTICLES_KEY = "Rendering.max_particles";
+        static constexpr const char* PARTICLE_SPAWN_RATE_KEY = "Rendering.particle_spawn_rate";
+        static constexpr const char* ENABLE_SKY_KEY = "Rendering.enable_sky";
+        static constexpr const char* SKY_QUALITY_KEY = "Rendering.sky_quality";
+        static constexpr const char* ENABLE_MIPMAPS_KEY = "Rendering.enable_mipmaps";
+        static constexpr const char* ENABLE_ANISOTROPIC_FILTERING_KEY = "Rendering.enable_anisotropic_filtering";
+        static constexpr const char* MAX_ANISOTROPY_KEY = "Rendering.max_anisotropy";
+    };
+
 private:
     Config() = default;
     ~Config() = default;

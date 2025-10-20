@@ -34,12 +34,23 @@ public:
 
     [[nodiscard]] uint32_t getBlockCount() const;
 
+    // Lighting data access (0-15 light levels)
+    [[nodiscard]] uint8_t getSkyLight(int32_t x, int32_t y, int32_t z) const;
+    [[nodiscard]] uint8_t getBlockLight(int32_t x, int32_t y, int32_t z) const;
+    void setSkyLight(int32_t x, int32_t y, int32_t z, uint8_t level);
+    void setBlockLight(int32_t x, int32_t y, int32_t z, uint8_t level);
+    [[nodiscard]] uint8_t getLightLevel(int32_t x, int32_t y, int32_t z) const;
+    void fillSkyLight(uint8_t level);
+    void fillBlockLight(uint8_t level);
+
 private:
     [[nodiscard]] static bool isValidPosition(int32_t x, int32_t y, int32_t z);
     [[nodiscard]] static int32_t getIndex(int32_t x, int32_t y, int32_t z);
 
     ChunkCoord position;
     std::array<uint16_t, CHUNK_VOLUME> blocks;
+    std::array<uint8_t, CHUNK_VOLUME> skyLight;   // Sky light levels (0-15, sunlight from above)
+    std::array<uint8_t, CHUNK_VOLUME> blockLight; // Block light levels (0-15, emissive blocks)
     bool dirty;
     uint32_t blockCount;
 };

@@ -1,6 +1,7 @@
 #include "poorcraft/world/World.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <cmath>
 
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/core/EventBus.h"
@@ -15,7 +16,8 @@ constexpr int DEFAULT_ATLAS_SIZE = 1024;
 
 } // namespace
 
-World::World() : chunkManager(std::make_unique<ChunkManager>()), textureAtlas(nullptr), renderStats() {}
+World::World() : chunkManager(std::make_unique<ChunkManager>()), textureAtlas(nullptr), 
+    timeOfDay(0.5f), dayNightCycleSpeed(1.0f), renderStats() {}
 
 World::~World() {
     shutdown();
@@ -56,9 +58,15 @@ void World::shutdown() {
     PC_INFO("World shutdown complete.");
 }
 
-void World::update(const glm::vec3& cameraPosition, int renderDistance) {
+void World::update(const glm::vec3& cameraPosition, int renderDistance, float deltaTime) {
     if (!chunkManager) {
         return;
+    }
+
+    // Update time of day
+    timeOfDay += deltaTime * dayNightCycleSpeed / 1200.0f; // 1200 seconds = 20 minutes per day
+    if (timeOfDay > 1.0f) {
+        timeOfDay -= 1.0f;
     }
 
     chunkManager->update(cameraPosition, renderDistance);
@@ -77,6 +85,11 @@ void World::render(const Camera& camera, Shader& shader) {
 
     shader.setMat4("view", camera.getViewMatrix());
     shader.setMat4("projection", camera.getProjectionMatrix());
+
+    // Set lighting uniforms
+    shader.setVec3("sunDirection", getSunDirection());
+    shader.setVec3("sunColor", getSunColor());
+    shader.setFloat("ambientStrength", 0.3f);
 
     auto atlasTexture = textureAtlas->getTexture();
     if (atlasTexture) {
@@ -251,6 +264,51 @@ uint16_t World::getBlockAt(int32_t worldX, int32_t worldY, int32_t worldZ) const
     }
     
     return chunk->getBlock(localX, worldY, localZ);
+}
+
+float World::getTimeOfDay() const {
+    return timeOfDay;
+}
+
+void World::setTimeOfDay(float time) {
+    timeOfDay = std::fmod(time, 1.0f);
+    if (timeOfDay < 0.0f) {
+        timeOfDay += 1.0f;
+    }
+}
+
+glm::vec3 World::getSunDirection() const {
+    const float angle = timeOfDay * 2.0f * static_cast<float>(M_PI) - static_cast<float>(M_PI) / 2.0f;
+    return glm::vec3(0.0f, std::sin(angle), std::cos(angle));
+}
+
+glm::vec3 World::getSunColor() const {
+    const glm::vec3 sunDir = getSunDirection();
+    const float sunHeight = sunDir.y;
+    
+    if (sunHeight > 0.0f) {
+        // Day time - yellow-orange sun
+        return glm::vec3(1.0f, 0.9f, 0.7f);
+    } else {
+        // Night time - dark blue
+        const float t = std::max(0.0f, sunHeight + 0.2f) / 0.2f;
+        return glm::mix(glm::vec3(0.1f, 0.1f, 0.2f), glm::vec3(1.0f, 0.9f, 0.7f), t);
+    }
+}
+
+glm::vec3 World::getMoonDirection() const {
+    return -getSunDirection();
+}
+
+glm::vec3 World::getSkyColor() const {
+    const glm::vec3 sunDir = getSunDirection();
+    const float sunHeight = sunDir.y;
+    
+    const glm::vec3 daySky(0.5f, 0.7f, 1.0f);
+    const glm::vec3 nightSky(0.05f, 0.05f, 0.1f);
+    
+    const float t = (sunHeight + 1.0f) * 0.5f;
+    return glm::mix(nightSky, daySky, t);
 }
 
 } // namespace PoorCraft

@@ -21,11 +21,11 @@ PoorCraft is an open-source Minecraft clone built from the ground up with modern
 - **Platform abstraction** layer for OS-specific operations
 - **Noise-driven world generation** featuring five biomes, biome blending, caves, ores, trees, cactus, tall grass, and flowers
 - **Modding system** with dual native/Lua plugin support, comprehensive mod API, hot-reload, event hooks, and example mods
+- **Advanced rendering system** with dynamic lighting (sky light, block light, ambient occlusion), transparent water with animation, particle effects, procedural sky with day-night cycle, and texture optimizations
 
 ### Planned Features
-- **Modern OpenGL rendering pipeline** with GLSL shaders
 - **32x32 pixel art skin system** for character customization
-- **Advanced graphics features** (ray tracing, shadows, lighting)
+- **Ray tracing support** (Phase 10) with Vulkan integration
 
 ## 📋 System Requirements
 
@@ -334,6 +334,51 @@ The project uses `clang-format` for consistent code formatting. A `.clang-format
 ### Contributing
 
 Please read the [Contributing Guidelines](docs/CONTRIBUTING.md) before making contributions.
+
+## 🎨 Rendering Features
+
+### Lighting System
+- **Sky Light**: Sunlight from above (0-15 levels), flood-fill propagation from top
+- **Block Light**: Emissive blocks like torches/lava (0-15 levels), flood-fill from light sources
+- **Ambient Occlusion**: Per-vertex corner darkening (0-3 occluded), enhances depth perception
+- **Smooth Lighting**: Per-vertex light interpolation for smooth gradients
+- **Directional Sun Light**: Calculated from time of day, affects diffuse lighting
+
+### Water Rendering
+- **Transparent Rendering**: Alpha blending with proper depth sorting
+- **Wave Animation**: Sin/cos vertex displacement for subtle wave motion
+- **Flow Animation**: Time-based UV offset for flowing water appearance
+- **Water Tint**: Light blue color with configurable transparency
+- **Proper Depth Handling**: Depth test enabled, depth write disabled for correct transparency
+
+### Particle System
+- **Block Breaking Particles**: 8-16 fragments with block texture, random velocities
+- **Explosion Effects**: Radial fire/smoke particles with configurable radius
+- **Particle Emitters**: Continuous effects (fire, smoke, water splash)
+- **Instanced Rendering**: One draw call for all particles (efficient GPU usage)
+- **Billboard Quads**: Particles always face camera for optimal appearance
+- **Back-to-Front Sorting**: Correct transparency rendering
+- **Particle Pool**: Efficient allocation with configurable max count (default 10,000)
+
+### Sky Rendering
+- **Procedural Sky Dome**: Gradient from horizon to zenith
+- **Day-Night Cycle**: 20-minute cycle at speed 1.0 (configurable)
+- **Sun Rendering**: Yellow disk moving in arc across sky
+- **Moon Rendering**: White disk opposite sun
+- **Atmospheric Colors**: Blue at day, dark at night, orange at sunrise/sunset
+- **Infinite Distance**: View matrix without translation for sky at infinity
+
+### Texture Quality
+- **Mipmapping**: Reduces aliasing at distance, improves performance
+- **Anisotropic Filtering**: Improves quality at oblique angles (up to 16x)
+- **Trilinear Filtering**: Smooth mipmap transitions
+- **Texture Atlas Optimization**: Efficient packing, clamp to edge prevents bleeding
+
+### Configuration
+All rendering features are configurable in `config.ini` [Rendering] section:
+- Enable/disable lighting, water animation, particles, sky
+- Adjust quality settings (ambient light level, water transparency, max particles)
+- Performance tuning (day-night cycle speed, particle spawn rate)
 
 ## 📚 Documentation
 

@@ -16,13 +16,20 @@ out float AO;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform float time;
 
 void main()
 {
-    vec4 worldPosition = model * vec4(aPos, 1.0);
+    // Apply wave animation
+    vec3 pos = aPos;
+    pos.y += sin(pos.x * 2.0 + time) * 0.05 + cos(pos.z * 2.0 + time) * 0.05;
+    
+    vec4 worldPosition = model * vec4(pos, 1.0);
     FragPos = worldPosition.xyz;
     Normal = mat3(transpose(inverse(model))) * aNormal;
-    TexCoord = aTexCoord;
+    
+    // Animate UVs for flow effect
+    TexCoord = aTexCoord + vec2(time * 0.05, time * 0.03);
     
     // Unpack and normalize light values
     SkyLight = float((aLight >> 4u) & 0x0Fu) / 15.0;
