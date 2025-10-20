@@ -126,8 +126,11 @@ public class World implements Updatable, Renderable {
         // Update chunk loading based on camera position
         chunkLoader.update(camera.getPosition().x, camera.getPosition().z);
         
-        // Update chunk renderer
-        chunkRenderer.update(5); // Max 5 rebuilds per frame
+        // Process chunks that need re-meshing after block edits
+        java.util.List<ChunkPos> chunksToRemesh = chunkRenderer.getChunksNeedingRebuild(5);
+        for (ChunkPos pos : chunksToRemesh) {
+            chunkLoader.requestRemesh(pos.x(), pos.z());
+        }
     }
     
     @Override

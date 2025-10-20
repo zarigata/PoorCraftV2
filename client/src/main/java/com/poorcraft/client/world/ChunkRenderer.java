@@ -66,19 +66,32 @@ public class ChunkRenderer {
     }
     
     /**
+     * Gets chunks that need rebuilding.
+     * 
+     * @param maxRebuilds Maximum number of chunks to return
+     * @return List of chunk positions that need rebuilding
+     */
+    public java.util.List<ChunkPos> getChunksNeedingRebuild(int maxRebuilds) {
+        java.util.List<ChunkPos> result = new java.util.ArrayList<>();
+        for (Map.Entry<ChunkPos, RenderChunk> entry : chunks.entrySet()) {
+            if (entry.getValue().needsRebuild) {
+                result.add(entry.getKey());
+                entry.getValue().needsRebuild = false;
+                if (result.size() >= maxRebuilds) {
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+    
+    /**
      * Updates chunks that need rebuilding.
      * Limits rebuilds per frame to avoid stuttering.
      */
     public void update(int maxRebuildsPerFrame) {
-        int rebuilds = 0;
-        for (RenderChunk renderChunk : chunks.values()) {
-            if (renderChunk.needsRebuild && rebuilds < maxRebuildsPerFrame) {
-                // Rebuild would happen here in a more complete implementation
-                // For now, just mark as not needing rebuild
-                renderChunk.needsRebuild = false;
-                rebuilds++;
-            }
-        }
+        // This is now handled by World calling getChunksNeedingRebuild
+        // and routing through ChunkLoader.requestRemesh
     }
     
     /**
