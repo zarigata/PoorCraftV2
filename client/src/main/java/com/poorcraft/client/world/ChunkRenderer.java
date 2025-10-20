@@ -51,10 +51,11 @@ public class ChunkRenderer {
      */
     public ChunkRenderer(Camera camera, ShaderProgram shader, TextureAtlas blockAtlas, com.poorcraft.client.resource.ShaderManager shaderManager) {
         this.camera = camera;
+        this.frustum = new Frustum();
         this.shader = shader;
         this.blockAtlas = blockAtlas;
-        this.occlusionQueriesSupported = GL.getCapabilities().GL_ARB_occlusion_query;
-        
+        boolean hardwareOcclusionSupported = GL.getCapabilities().GL_ARB_occlusion_query;
+
         // Load bounding box shader
         try {
             this.boundingBoxShader = shaderManager.loadShader("bounding_box");
@@ -62,7 +63,9 @@ public class ChunkRenderer {
             LOGGER.warn("Failed to load bounding box shader, falling back to heuristic occlusion culling", e);
             this.boundingBoxShader = null;
         }
-        
+
+        this.occlusionQueriesSupported = hardwareOcclusionSupported && this.boundingBoxShader != null;
+
         // Initialize bounding box geometry for occlusion queries
         initBoundingBoxGeometry();
     }
@@ -242,6 +245,11 @@ public class ChunkRenderer {
         shader.setFloat("uFogEnd", 200.0f);
         shader.setVector3f("uFogColor", new Vector3f(0.5f, 0.7f, 1.0f));
         shader.setVector3f("uCameraPos", camera.getPosition());
+
+        Vector3f sunDirection = new Vector3f(-0.3f, -1.0f, -0.2f).normalize();
+        shader.setVector3f("uSunDirection", sunDirection);
+        shader.setVector3f("uSunColor", new Vector3f(1.0f, 0.95f, 0.8f));
+        shader.setVector3f("uAmbientColor", new Vector3f(0.4f, 0.4f, 0.5f));
         
         int renderedChunks = 0;
         int unknownChunksDrawn = 0;
@@ -329,6 +337,12 @@ public class ChunkRenderer {
         // Enable depth testing for occlusion queries
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glColorMask(false, false, false, false); // Disable color writes
+        boolean previousDepthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
+        GL11.glDepthMask(false);
+        boolean cullFaceEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+        if (cullFaceEnabled) {
+            GL11.glDisable(GL11.GL_CULL_FACE);
+        }
 
         // Bind bounding box shader and set uniforms
         boundingBoxShader.use();
@@ -370,6 +384,10 @@ public class ChunkRenderer {
         // Unbind VAO and restore state
         GL30.glBindVertexArray(0);
         GL11.glColorMask(true, true, true, true);
+        GL11.glDepthMask(previousDepthMask);
+        if (cullFaceEnabled) {
+            GL11.glEnable(GL11.GL_CULL_FACE);
+        }
     }
     /**
      * Updates visibility states based on occlusion query results.
@@ -413,7 +431,7 @@ public class ChunkRenderer {
      * Determines if a chunk should be rendered based on its visibility state.
      */
     private boolean shouldRenderChunk(RenderChunk renderChunk, int unknownChunksDrawn) {
-        if (occlusionQueriesSupported) {
+        if (occlusionQueriesSupported && boundingBoxShader != null) {
             // Hardware occlusion queries
             switch (renderChunk.visibility) {
                 case VISIBLE:

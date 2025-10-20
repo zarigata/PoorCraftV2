@@ -203,6 +203,14 @@ public class TextureManager extends ResourceManager<Texture2D> {
     public Texture2D getMissingTexture() {
         return missingTexture;
     }
+
+    public GLInfo getCapabilities() {
+        return capabilities;
+    }
+
+    public Configuration getConfig() {
+        return config;
+    }
     
     @Override
     public void close() {

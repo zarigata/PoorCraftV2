@@ -45,8 +45,13 @@ public class ChunkLoader {
         this.lastPlayerChunkX = Integer.MAX_VALUE;
         this.lastPlayerChunkZ = Integer.MAX_VALUE;
         
-        this.genThreads = config.getInt("world.generationThreads", 4);
-        this.meshThreads = config.getInt("world.meshingThreads", 2);
+        int requestedGenThreads = config.getInt("world.generationThreads", 4);
+        int requestedMeshThreads = config.getInt("world.meshingThreads", 2);
+        int maxThreads = Math.max(1, Runtime.getRuntime().availableProcessors());
+        this.genThreads = Math.max(1, Math.min(requestedGenThreads, maxThreads));
+        this.meshThreads = Math.max(1, Math.min(requestedMeshThreads, maxThreads));
+        LOGGER.info("Using {} generation threads (requested {}), {} meshing threads (requested {})",
+            this.genThreads, requestedGenThreads, this.meshThreads, requestedMeshThreads);
         
         this.generationThreads = Executors.newFixedThreadPool(genThreads, r -> {
             Thread t = new Thread(r, "ChunkGeneration");

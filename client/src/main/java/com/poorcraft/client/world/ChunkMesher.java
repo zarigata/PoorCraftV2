@@ -159,16 +159,18 @@ public class ChunkMesher {
         float texLayer = getTextureLayer(block, faceIndex);
         float ao = 1.0f; // Ambient occlusion (future enhancement)
         
-        // Calculate quad vertices
-        float[] v0 = {x, y, z, 0, 0, normal[0], normal[1], normal[2], texLayer, ao};
-        float[] v1 = {x + du[0], y + du[1], z + du[2], 1, 0, normal[0], normal[1], normal[2], texLayer, ao};
-        float[] v2 = {x + du[0] + dv[0], y + du[1] + dv[1], z + du[2] + dv[2], 1, 1, normal[0], normal[1], normal[2], texLayer, ao};
-        float[] v3 = {x + dv[0], y + dv[1], z + dv[2], 0, 1, normal[0], normal[1], normal[2], texLayer, ao};
+        // Calculate quad vertices with UV tiling per block
+        float uSpan = Math.abs(du[0]) + Math.abs(du[1]) + Math.abs(du[2]);
+        float vSpan = Math.abs(dv[0]) + Math.abs(dv[1]) + Math.abs(dv[2]);
+        float[] v0 = {x, y, z, 0.0f, 0.0f, normal[0], normal[1], normal[2], texLayer, ao};
+        float[] v1Arr = {x + du[0], y + du[1], z + du[2], uSpan, 0.0f, normal[0], normal[1], normal[2], texLayer, ao};
+        float[] v2Arr = {x + du[0] + dv[0], y + du[1] + dv[1], z + du[2] + dv[2], uSpan, vSpan, normal[0], normal[1], normal[2], texLayer, ao};
+        float[] v3Arr = {x + dv[0], y + dv[1], z + dv[2], 0.0f, vSpan, normal[0], normal[1], normal[2], texLayer, ao};
         
         if (direction > 0) {
-            mesh.addQuad(v0, v1, v2, v3);
+            mesh.addQuad(v0, v1Arr, v2Arr, v3Arr);
         } else {
-            mesh.addQuad(v3, v2, v1, v0);
+            mesh.addQuad(v3Arr, v2Arr, v1Arr, v0);
         }
     }
     

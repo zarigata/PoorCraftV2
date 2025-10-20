@@ -8,8 +8,18 @@ import com.poorcraft.client.resource.TextureManager;
 import com.poorcraft.common.config.Configuration;
 import com.poorcraft.common.util.ChunkPos;
 import com.poorcraft.common.world.gen.TerrainGenerator;
+import com.poorcraft.core.Renderable;
 import com.poorcraft.core.Updatable;
 import org.slf4j.Logger;
+
+import java.awt.HeadlessException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Main World class that coordinates all world systems.
@@ -26,6 +36,7 @@ public class World implements Updatable, Renderable {
     private final Camera camera;
     private final TextureAtlas blockAtlas;
     private final ShaderProgram worldShader;
+    private final Set<String> missingTextureWarnings = new HashSet<>();
     
     /**
      * Creates a new world.
@@ -71,21 +82,45 @@ public class World implements Updatable, Renderable {
     /**
      * Creates a 1x1 transparent texture for AIR block.
      */
-    private java.nio.file.Path createTransparentTexture() {
+    private Path createTransparentTexture() {
         try {
-            java.nio.file.Path tempFile = java.nio.file.Files.createTempFile("air_texture", ".png");
+            Path tempFile = Files.createTempFile("air_texture", ".png");
+            javax.imageio.ImageIO.setUseCache(false);
             tempFile.toFile().deleteOnExit();
             
             // Create a 1x1 transparent image using BufferedImage
             java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-            // Image is already transparent by default
-            
-            // Write to file
             javax.imageio.ImageIO.write(img, "PNG", tempFile.toFile());
             return tempFile;
-        } catch (Exception e) {
-            LOGGER.error("Failed to create transparent texture for AIR", e);
-            throw new RuntimeException("Failed to create AIR texture", e);
+        } catch (HeadlessException | IOException e) {
+            LOGGER.warn("Headless environment detected while creating AIR texture, using bundled fallback", e);
+            try {
+                Path fallback = loadTextureFromClasspath("textures/blocks/air.png");
+                if (fallback != null) {
+                    return fallback;
+                }
+            } catch (IOException ioException) {
+                LOGGER.error("Failed to load bundled AIR texture fallback", ioException);
+            }
+            throw new RuntimeException("Failed to acquire AIR texture", e);
+        }
+    }
+    
+    /**
+     * Loads a texture from classpath to a temporary file.
+     */
+    private Path loadTextureFromClasspath(String resourcePath) throws IOException {
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                return null;
+            }
+
+            String filename = resourcePath.substring(resourcePath.lastIndexOf('/') + 1);
+            Path tempFile = Files.createTempFile("block_", "_" + filename);
+            tempFile.toFile().deleteOnExit();
+
+            Files.copy(is, tempFile, StandardCopyOption.REPLACE_EXISTING);
+            return tempFile;
         }
     }
     
@@ -96,22 +131,24 @@ public class World implements Updatable, Renderable {
         try {
             // Reserve layer 0 for AIR - add a 1x1 transparent texture
             // Create a temporary 1x1 transparent PNG for AIR
-            java.nio.file.Path airTexturePath = createTransparentTexture();
+            Path airTexturePath = createTransparentTexture();
             blockAtlas.addTexture("air", airTexturePath);
-            blockAtlas.addTexture("stone", textureManager.loadTexture("textures/blocks/stone.png"));
-            blockAtlas.addTexture("dirt", textureManager.loadTexture("textures/blocks/dirt.png"));
-            blockAtlas.addTexture("grass_top", textureManager.loadTexture("textures/blocks/grass_top.png"));
-            blockAtlas.addTexture("sand", textureManager.loadTexture("textures/blocks/sand.png"));
-            blockAtlas.addTexture("sandstone", textureManager.loadTexture("textures/blocks/sandstone.png"));
-            blockAtlas.addTexture("snow", textureManager.loadTexture("textures/blocks/snow.png"));
-            blockAtlas.addTexture("ice", textureManager.loadTexture("textures/blocks/ice.png"));
-            blockAtlas.addTexture("wood_top", textureManager.loadTexture("textures/blocks/wood_top.png"));
-            blockAtlas.addTexture("leaves", textureManager.loadTexture("textures/blocks/leaves.png"));
-            blockAtlas.addTexture("water", textureManager.loadTexture("textures/blocks/water.png"));
             
+            // Load block textures from classpath
+            addBlockTexture("stone", "air");
+            addBlockTexture("dirt", "stone");
+            addBlockTexture("grass_top", "stone");
+            addBlockTexture("sand", "stone");
+            addBlockTexture("sandstone", "stone");
+            addBlockTexture("snow", "stone");
+            addBlockTexture("ice", "stone");
+            addBlockTexture("wood_top", "stone");
+            addBlockTexture("leaves", "stone");
+            addBlockTexture("water", "stone");
+
             // Additional textures for multi-face blocks
-            blockAtlas.addTexture("grass_side", textureManager.loadTexture("textures/blocks/grass_side.png"));
-            blockAtlas.addTexture("wood_side", textureManager.loadTexture("textures/blocks/wood_side.png"));
+            addBlockTexture("grass_side", "stone");
+            addBlockTexture("wood_side", "stone");
             
             blockAtlas.build();
             LOGGER.info("Loaded {} block textures", blockAtlas.getTextureCount());
@@ -119,6 +156,39 @@ public class World implements Updatable, Renderable {
             LOGGER.error("Failed to load block textures", e);
             throw new RuntimeException("Failed to load block textures", e);
         }
+    }
+
+    private void addBlockTexture(String textureName, String fallbackTextureName) throws IOException {
+        Path texturePath = loadTextureOrFallback(textureName, fallbackTextureName);
+        if (texturePath != null) {
+            blockAtlas.addTexture(textureName, texturePath);
+        }
+    }
+
+    private Path loadTextureOrFallback(String textureName, String fallbackTextureName) throws IOException {
+        Path path = loadTextureFromClasspath("textures/blocks/" + textureName + ".png");
+        if (path != null) {
+            return path;
+        }
+
+        if (missingTextureWarnings.add(textureName)) {
+            LOGGER.warn("Missing texture '{}', using fallback '{}'", textureName, fallbackTextureName);
+        }
+
+        if ("air".equals(fallbackTextureName)) {
+            return createTransparentTexture();
+        }
+
+        Path fallbackPath = loadTextureFromClasspath("textures/blocks/" + fallbackTextureName + ".png");
+        if (fallbackPath != null) {
+            return fallbackPath;
+        }
+
+        if (!"air".equals(fallbackTextureName)) {
+            return createTransparentTexture();
+        }
+
+        throw new IOException("Unable to locate fallback texture for " + textureName);
     }
     
     @Override
@@ -205,6 +275,15 @@ public class World implements Updatable, Renderable {
      * @return Layer index, or 0 if not found
      */
     public int getTextureLayer(String textureName) {
-        return blockAtlas.getTextureIndex(textureName);
+        int layer = blockAtlas.getLayer(textureName);
+        if (layer >= 0) {
+            return layer;
+        }
+
+        if (missingTextureWarnings.add(textureName)) {
+            LOGGER.warn("Texture '{}' not found in atlas, using AIR fallback", textureName);
+        }
+
+        return blockAtlas.getTextureIndex("air");
     }
 }

@@ -92,17 +92,15 @@ public class PalettedContainer {
      * Checks if this container is empty (all air).
      */
     public boolean isEmpty() {
+        if (palette == null) {
+            return isDataAllZero();
+        }
+        
         if (palette.size() == 1 && palette.get(0) == 0) {
             return true;
         }
         
-        // Check if all entries are 0
-        for (long datum : data) {
-            if (datum != 0) {
-                return false;
-            }
-        }
-        return true;
+        return isDataAllZero();
     }
     
     /**
@@ -159,7 +157,11 @@ public class PalettedContainer {
      * Gets memory usage in bytes.
      */
     public long getMemoryUsage() {
-        return (long) data.length * 8 + (long) palette.size() * 4;
+        long dataBytes = (long) data.length * Long.BYTES;
+        if (palette == null) {
+            return dataBytes;
+        }
+        return dataBytes + (long) palette.size() * Integer.BYTES;
     }
     
     private int extractFromData(int index) {
@@ -200,7 +202,7 @@ public class PalettedContainer {
             
             for (int i = 0; i < size; i++) {
                 int paletteIndex = extractFromData(i);
-                int blockId = palette.get(paletteIndex);
+                int blockId = palette == null ? paletteIndex : palette.get(paletteIndex);
                 writeToData(newData, newBits, i, blockId);
             }
             
@@ -236,5 +238,14 @@ public class PalettedContainer {
     private int calculateDataLength(int size, int bitsPerEntry) {
         int entriesPerLong = 64 / bitsPerEntry;
         return (size + entriesPerLong - 1) / entriesPerLong;
+    }
+    
+    private boolean isDataAllZero() {
+        for (long datum : data) {
+            if (datum != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 }

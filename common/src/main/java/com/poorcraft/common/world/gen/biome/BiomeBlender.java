@@ -66,14 +66,22 @@ public class BiomeBlender {
         BiomeType dominantBiome = BiomeType.PLAINS;
         double maxWeight = 0.0;
         
+        double radius = Math.max(blendRadius, EPSILON);
+        double radiusSq = radius * radius;
+        boolean contributed = false;
+        
         for (BiomeType biome : BiomeType.getAllBiomes()) {
             double de = elevation - biome.getElevation();
             double dm = moisture - biome.getMoisture();
             double dt = temperature - biome.getTemperature();
             double distanceSq = de * de + dm * dm + dt * dt;
+            double normalizedDistanceSq = distanceSq / radiusSq;
+            if (normalizedDistanceSq > 1.0) {
+                continue;
+            }
             
             // Inverse distance weighting
-            double weight = 1.0 / Math.max(distanceSq, EPSILON);
+            double weight = 1.0 / Math.max(normalizedDistanceSq, EPSILON);
             
             sumWeight += weight;
             sumBaseHeight += biome.getBaseHeight() * weight;
@@ -81,11 +89,23 @@ public class BiomeBlender {
             
             surfaceWeights[biome.getId()] += weight;
             fillWeights[biome.getId()] += weight;
+            contributed = true;
             
             if (weight > maxWeight) {
                 maxWeight = weight;
                 dominantBiome = biome;
             }
+        }
+        
+        if (!contributed) {
+            BiomeType fallback = BiomeType.getById(selectBiome(elevation, moisture, temperature));
+            return new BlendedBiomeParams(
+                fallback.getBaseHeight(),
+                fallback.getRoughness(),
+                fallback.getSurfaceBlock(),
+                fallback.getFillBlock(),
+                fallback
+            );
         }
         
         // Normalize

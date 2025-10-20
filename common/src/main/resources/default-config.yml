@@ -67,3 +67,14 @@ resources:
   watchDebounceMs: 150
   shaderPath: shaders
   texturePath: textures
+
+entity:
+  maxEntities: 1000
+  renderDistance: 96.0
+  updateRadius: 64.0
+  spawnDistance: 128.0
+  despawnDistance: 144.0
+  skinCacheSize: 100
+  asyncSkinLoading: true
+  defaultPlayerSkin: "skins/player_default.png"
+  defaultNPCSkin: "skins/npc_villager.png"

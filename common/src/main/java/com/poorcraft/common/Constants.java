@@ -85,17 +85,41 @@ public final class Constants {
         public static final float WALK_SPEED = 4.317f; // blocks per second
         public static final float SPRINT_SPEED = 5.612f;
         public static final float SNEAK_SPEED = 1.295f;
-        
+
         private Player() {}
     }
-    
+
+    /**
+     * Entity system constants.
+     */
+    public static final class Entity {
+        public static final float DEFAULT_SPAWN_DISTANCE = 128.0f;
+        public static final float MAX_RENDER_DISTANCE = 96.0f;
+        public static final float DESPAWN_DISTANCE = 144.0f;
+        public static final float UPDATE_RADIUS = 64.0f;
+        public static final int PLAYER_ENTITY_ID = 0;
+        public static final int NPC_ENTITY_ID = 1;
+
+        private Entity() {}
+    }
+
+    /**
+     * Animation-related constants.
+     */
+    public static final class Animation {
+        public static final int DEFAULT_TICK_RATE = 20;
+        public static final float INTERPOLATION_THRESHOLD = 0.001f;
+
+        private Animation() {}
+    }
+
     /**
      * Skin-related constants.
      */
     public static final class Skin {
         public static final int TEXTURE_WIDTH = 32;
         public static final int TEXTURE_HEIGHT = 32;
-        
+
         private Skin() {}
     }
     
