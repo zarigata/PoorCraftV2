@@ -343,6 +343,58 @@ sudo pacman -S mesa
 git submodule update --init --recursive
 ```
 
+### Build Succeeds But No Executable Produced
+
+- Symptoms: `cmake --build build` completes successfully, but `build/bin/PoorCraft` is missing.
+- Root Cause: Git submodules such as `libs/glfw/` and `libs/imgui/` were not populated. CMake configured empty targets that link without producing binaries.
+
+#### Step-by-step Fix
+```bash
+# 1. Verify submodules contain sources
+ls libs/glfw/CMakeLists.txt
+ls libs/imgui/imgui.cpp
+
+# 2. Initialize or re-fetch submodules
+git submodule update --init --recursive
+
+# 3. Run dependency script to validate
+./scripts/setup_dependencies.sh
+
+# 4. Clean previous build to avoid stale cache
+rm -rf build/
+
+# 5. Reconfigure and rebuild
+cmake -B build
+cmake --build build --parallel
+
+# 6. Confirm executable exists
+ls -lh build/bin/PoorCraft
+```
+
+#### Verifying Successful Build
+```bash
+# Check binary size (should be several MB)
+ls -lh build/bin/PoorCraft
+
+# Verify shared libraries on Linux
+ldd build/bin/PoorCraft
+
+# Run verification script
+./scripts/verify_build.sh
+```
+
+On Windows:
+```cmd
+dir build\bin\Release\PoorCraft.exe
+scripts\verify_build.bat
+```
+
+#### Handling Network Issues
+- Confirm internet access: `ping github.com`
+- Retry with force: `git submodule update --init --recursive --force`
+- Ensure `.gitmodules` uses HTTPS URLs
+- As a last resort, manually download submodule archives and extract into `libs/`
+
 #### "Permission denied" (macOS)
 **Solution**: Allow apps from unidentified developers or build from command line.
 

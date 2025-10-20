@@ -1,0 +1,70 @@
+name: Build Verification
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.config }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        config: [Debug, Release]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: scripts\setup_dependencies.bat --download-glad
+        shell: cmd
+
+      - name: Set up dependencies (Unix)
+        if: matrix.os != 'windows-latest'
+        run: ./scripts/setup_dependencies.sh --download-glad
+        shell: bash
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+        shell: bash
+        if: matrix.os != 'windows-latest'
+
+      - name: Configure CMake (Windows)
+        if: matrix.os == 'windows-latest'
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.config }} -A x64
+        shell: cmd
+
+      - name: Build
+        if: matrix.os != 'windows-latest'
+        run: cmake --build build --parallel
+        shell: bash
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: cmake --build build --config ${{ matrix.config }} --parallel
+        shell: cmd
+
+      - name: Verify executable (Unix)
+        if: matrix.os != 'windows-latest'
+        run: ./scripts/verify_build.sh build/bin
+        shell: bash
+
+      - name: Verify executable (Windows)
+        if: matrix.os == 'windows-latest'
+        run: scripts\verify_build.bat build\bin
+        shell: cmd
+
+      - name: Upload executable artifact
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PoorCraft-${{ matrix.os }}-${{ matrix.config }}
+          path: |
+            build/bin/**

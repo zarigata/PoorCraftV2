@@ -53,6 +53,9 @@ cd PoorCraft
 
 # Initialize submodules and setup dependencies
 git submodule update --init --recursive
+# Verify submodules fetched correctly
+ls libs/glfw/CMakeLists.txt
+ls libs/imgui/imgui.cpp
 scripts\setup_dependencies.bat
 
 # Configure with CMake
@@ -69,6 +72,10 @@ build\bin\Release\PoorCraft.exe
 
 ```bash
 # Configure with MinGW Makefiles
+git submodule update --init --recursive
+# Verify submodules fetched correctly
+ls libs/glfw/CMakeLists.txt
+ls libs/imgui/imgui.cpp
 cmake -B build -G "MinGW Makefiles"
 
 # Build and run
@@ -87,6 +94,9 @@ sudo apt install build-essential cmake git
 git clone https://github.com/yourusername/PoorCraft.git
 cd PoorCraft
 git submodule update --init --recursive
+# Verify submodules fetched correctly
+ls libs/glfw/CMakeLists.txt
+ls libs/imgui/imgui.cpp
 ./scripts/setup_dependencies.sh
 
 # Configure and build
@@ -129,6 +139,9 @@ brew install cmake
 git clone https://github.com/yourusername/PoorCraft.git
 cd PoorCraft
 git submodule update --init --recursive
+# Verify submodules fetched correctly
+ls libs/glfw/CMakeLists.txt
+ls libs/imgui/imgui.cpp
 ./scripts/setup_dependencies.sh
 
 # Configure and build
@@ -185,6 +198,14 @@ PoorCraft/
     └── setup_dependencies.sh # Dependency setup
 ```
 
+**⚠️ Build issues?**
+If `cmake --build build` reports success but `build/bin/PoorCraft` is missing:
+1. Verify submodules: `ls libs/glfw/CMakeLists.txt`
+2. Reinitialize: `git submodule update --init --recursive --force`
+3. Rerun setup: `./scripts/setup_dependencies.sh`
+4. Clean and rebuild: `rm -rf build && cmake -B build && cmake --build build`
+See `docs/BUILD.md` and `docs/TROUBLESHOOTING.md` for full guidance.
+
 ## 🔧 Dependencies
 
 PoorCraft uses the following third-party libraries:
@@ -198,6 +219,13 @@ PoorCraft uses the following third-party libraries:
 - **[sol2](https://github.com/ThePhD/sol2)** - Modern C++17 Lua binding library (Git submodule)
 
 GLFW and GLM are included as Git submodules. GLAD files need to be generated from https://glad.dav1d.de/ with OpenGL 4.6 Core profile, and stb_image.h needs to be downloaded. Use the provided `setup_dependencies` scripts to automate this process.
+
+**Dependency checklist**
+- ✅ Git submodules initialized (`ls libs/glfw/CMakeLists.txt`)
+- ✅ GLAD loader present (`libs/glad/include/glad/glad.h`)
+- ✅ stb headers present (`libs/stb/stb_image.h`)
+- ✅ Build directory configured (`cmake -B build`)
+- ✅ Executable produced (`build/bin/PoorCraft` or `build/bin/Release/PoorCraft.exe`)
 
 ## ⚙️ Configuration
 

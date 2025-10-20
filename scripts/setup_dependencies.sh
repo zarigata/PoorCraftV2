@@ -12,6 +12,37 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Options
+FORCE_FLAG=false
+DOWNLOAD_GLAD=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force)
+            FORCE_FLAG=true
+            shift
+            ;;
+        --download-glad)
+            DOWNLOAD_GLAD=true
+            shift
+            ;;
+        --help|-h)
+            cat <<'USAGE'
+Usage: ./scripts/setup_dependencies.sh [--force] [--download-glad]
+
+  --force           Retry submodule fetch with git's --force flag
+  --download-glad   Attempt to download pre-generated GLAD files from mirror
+  --help            Show this help message
+USAGE
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
 # Function to print colored output
 print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -27,6 +58,51 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+check_network() {
+    print_info "Checking network connectivity..."
+    if command -v ping >/dev/null 2>&1; then
+        if ! ping -c 1 github.com >/dev/null 2>&1; then
+            print_error "Unable to reach github.com via ping"
+            print_error "Please verify your internet connection or firewall settings"
+            exit 1
+        fi
+    elif command -v getent >/dev/null 2>&1; then
+        if ! getent hosts github.com >/dev/null 2>&1; then
+            print_error "DNS lookup for github.com failed"
+            exit 1
+        fi
+    else
+        print_warning "Neither ping nor getent available for connectivity check; proceeding without validation"
+    fi
+    print_success "Network connectivity verified"
+}
+
+directory_has_content() {
+    local dir="$1"
+    if [ ! -d "$dir" ]; then
+        return 1
+    fi
+    if [ -z "$(find "$dir" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.gitignore' ! -name '.gitkeep' 2>/dev/null)" ]; then
+        return 1
+    fi
+    return 0
+}
+
+verify_file() {
+    local file_path="$1"
+    if [ ! -f "$file_path" ]; then
+        print_error "Expected file missing: $file_path"
+        exit 1
+    fi
+}
+
+print_submodule_progress() {
+    local index="$1"
+    local total="$2"
+    local name="$3"
+    print_info "Fetching ${name}... ${index}/${total}"
 }
 
 print_info "PoorCraft Dependency Setup Script"
@@ -58,80 +134,54 @@ fi
 
 print_success "Running from correct directory"
 
+check_network
+
+SUBMODULE_ARGS=(--init --recursive)
+if [ "$FORCE_FLAG" = true ]; then
+    SUBMODULE_ARGS+=(--force)
+fi
+
 # Initialize and update Git submodules
 print_info "Setting up Git submodules..."
 
 if [ -f ".gitmodules" ]; then
     print_info "Found .gitmodules file, initializing submodules..."
 
-    # Check if submodules are already initialized
-    if [ -d "libs/glfw/.git" ] || [ -d "libs/glm/.git" ]; then
-        print_info "Submodules appear to be already initialized"
-        print_info "Updating existing submodules..."
-        git submodule update --init --recursive
-    else
-        print_info "Initializing submodules for the first time..."
-        git submodule update --init --recursive
-    fi
+    local_progress=0
+    total_submodules=6
+
+    for submodule in libs/glfw libs/glm libs/enet libs/imgui libs/lua libs/sol2; do
+        local_progress=$((local_progress + 1))
+        print_submodule_progress "$local_progress" "$total_submodules" "$submodule"
+        if ! git submodule update "${SUBMODULE_ARGS[@]}" "$submodule"; then
+            print_error "Failed to initialize submodule: $submodule"
+            print_error "Try rerunning with --force or inspect .gitmodules configuration"
+            exit 1
+        fi
+    done
 
     print_success "Git submodules updated successfully"
 
     # Verify submodules
     print_info "Verifying submodules..."
 
-    if [ ! -d "libs/glfw" ]; then
-        print_error "GLFW submodule not found after initialization"
-        print_error "Please check your internet connection and try again"
-        exit 1
-    fi
+    verify_file "libs/glfw/CMakeLists.txt"
+    directory_has_content "libs/glfw" || { print_error "GLFW directory is empty after initialization"; exit 1; }
 
-    if [ ! -d "libs/glm" ]; then
-        print_error "GLM submodule not found after initialization"
-        print_error "Please check your internet connection and try again"
-        exit 1
-    fi
+    verify_file "libs/glm/CMakeLists.txt"
+    directory_has_content "libs/glm" || { print_error "GLM directory is empty after initialization"; exit 1; }
 
-    print_info "Initializing ENet submodule..."
-    git submodule update --init --recursive libs/enet
-    if [ $? -eq 0 ]; then
-        print_success "ENet submodule initialized successfully"
-    else
-        print_error "Failed to initialize ENet submodule"
-        exit 1
-    fi
+    verify_file "libs/enet/CMakeLists.txt"
+    directory_has_content "libs/enet" || { print_error "ENet directory is empty after initialization"; exit 1; }
 
-    print_info "Initializing ImGui submodule..."
-    git submodule update --init --recursive libs/imgui
-    if [ $? -eq 0 ]; then
-        print_success "ImGui submodule initialized successfully"
-    else
-        print_error "Failed to initialize ImGui submodule"
-        exit 1
-    fi
+    verify_file "libs/imgui/imgui.cpp"
+    directory_has_content "libs/imgui" || { print_error "ImGui directory is empty after initialization"; exit 1; }
 
-    if [ ! -d "libs/imgui" ]; then
-        print_error "ImGui submodule not found after initialization"
-        print_error "Please check your internet connection and try again"
-        exit 1
-    fi
+    verify_file "libs/lua/lua.h"
+    directory_has_content "libs/lua" || { print_error "Lua directory is empty after initialization"; exit 1; }
 
-    print_info "Initializing Lua submodule..."
-    git submodule update --init --recursive libs/lua
-    if [ $? -eq 0 ]; then
-        print_success "Lua submodule initialized successfully"
-    else
-        print_error "Failed to initialize Lua submodule"
-        exit 1
-    fi
-
-    print_info "Initializing sol2 submodule..."
-    git submodule update --init --recursive libs/sol2
-    if [ $? -eq 0 ]; then
-        print_success "sol2 submodule initialized successfully"
-    else
-        print_error "Failed to initialize sol2 submodule"
-        exit 1
-    fi
+    verify_file "libs/sol2/include/sol/sol.hpp"
+    directory_has_content "libs/sol2" || { print_error "sol2 directory is empty after initialization"; exit 1; }
 
     print_success "All Git submodules verified"
 
@@ -145,27 +195,46 @@ print_info "Setting up GLAD (OpenGL function loader)..."
 
 if [ ! -d "libs/glad" ]; then
     print_info "Creating GLAD directory..."
-    mkdir -p libs/glad
+    mkdir -p libs/glad/include/glad
+    mkdir -p libs/glad/include/KHR
+    mkdir -p libs/glad/src
 fi
 
 # Check if GLAD files already exist
 if [ -f "libs/glad/include/glad/glad.h" ] && [ -f "libs/glad/src/glad.c" ]; then
-    print_info "GLAD files already exist, skipping download"
+    print_info "GLAD files already exist, skipping generation"
 else
-    print_info "GLAD files not found, please generate them manually:"
-    print_info ""
-    print_info "1. Go to https://glad.dav1d.de/"
-    print_info "2. Set 'API' to 'gl' (version 4.6)"
-    print_info "3. Set 'Profile' to 'Core'"
-    print_info "4. Set 'Options' to 'Generate a loader'"
-    print_info "5. Click 'Generate'"
-    print_info "6. Download the ZIP file"
-    print_info "7. Extract 'include/glad/glad.h' to libs/glad/include/glad/"
-    print_info "8. Extract 'src/glad.c' to libs/glad/src/"
-    print_info ""
-    print_warning "GLAD setup requires manual intervention"
-    print_warning "Please complete the steps above and run this script again"
-    exit 1
+    if [ "$DOWNLOAD_GLAD" = true ]; then
+        print_info "Attempting to download GLAD loader from mirror..."
+        GLAD_BASE_URL="https://raw.githubusercontent.com/Dav1dde/glad/master"
+        if command -v curl &> /dev/null; then
+            curl -fL -o libs/glad/include/glad/glad.h "$GLAD_BASE_URL/include/glad/glad.h"
+            curl -fL -o libs/glad/include/KHR/khrplatform.h "$GLAD_BASE_URL/include/KHR/khrplatform.h"
+            curl -fL -o libs/glad/src/glad.c "$GLAD_BASE_URL/src/glad.c"
+        elif command -v wget &> /dev/null; then
+            wget -O libs/glad/include/glad/glad.h "$GLAD_BASE_URL/include/glad/glad.h"
+            wget -O libs/glad/include/KHR/khrplatform.h "$GLAD_BASE_URL/include/KHR/khrplatform.h"
+            wget -O libs/glad/src/glad.c "$GLAD_BASE_URL/src/glad.c"
+        else
+            print_warning "Neither curl nor wget available to download GLAD"
+        fi
+    fi
+
+    if [ -f "libs/glad/include/glad/glad.h" ] && [ -f "libs/glad/src/glad.c" ]; then
+        print_success "GLAD files downloaded successfully"
+    else
+        print_warning "GLAD files not found"
+        print_info "1. Go to https://glad.dav1d.de/"
+        print_info "2. Set 'API' to 'gl' (version 4.6)"
+        print_info "3. Set 'Profile' to 'Core'"
+        print_info "4. Set 'Options' to 'Generate a loader'"
+        print_info "5. Click 'Generate' and download the ZIP file"
+        print_info "6. Extract 'include/glad/glad.h' to libs/glad/include/glad/"
+        print_info "7. Extract 'include/KHR/khrplatform.h' to libs/glad/include/KHR/"
+        print_info "8. Extract 'src/glad.c' to libs/glad/src/"
+        print_error "GLAD setup requires manual intervention or rerun with --download-glad"
+        exit 1
+    fi
 fi
 
 print_success "GLAD setup completed"
@@ -257,9 +326,15 @@ fi
 # Show summary
 print_info ""
 print_info "=== Dependency Setup Summary ==="
-print_success "Git submodules: Initialized"
-print_success "GLFW: Ready"
-print_success "GLM: Ready"
+if git submodule status --recursive >/dev/null 2>&1; then
+    git submodule status --recursive | while read -r line; do
+        print_success "Submodule: $line"
+    done
+else
+    print_warning "Unable to list submodule status"
+fi
+print_success "GLFW: Verified"
+print_success "GLM: Verified"
 print_success "GLAD: Ready"
 print_success "stb_image: Ready"
 print_success "CMake configuration: Verified"
@@ -269,8 +344,9 @@ print_info ""
 print_info "Next steps:"
 print_info "1. Run the build script: ./scripts/build.sh"
 print_info "2. Or build manually: cmake -B build && cmake --build build"
-print_info "3. See docs/BUILD.md for detailed build instructions"
-print_info "4. Check docs/CONTRIBUTING.md for development guidelines"
+print_info "3. Run ./scripts/verify_build.sh after building to validate artifacts"
+print_info "4. See docs/BUILD.md for detailed build instructions"
+print_info "5. Check docs/CONTRIBUTING.md for development guidelines"
 
 print_success "Dependency setup completed successfully!"
 print_info "You can now build the PoorCraft engine"

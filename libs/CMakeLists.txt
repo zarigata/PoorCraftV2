@@ -1,6 +1,10 @@
 # libs/CMakeLists.txt - Third-party dependencies CMake configuration
 
 # GLFW - Window and input management
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/glfw/CMakeLists.txt")
+    message(FATAL_ERROR "GLFW submodule not initialized. Please run: git submodule update --init --recursive")
+endif()
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -12,18 +16,31 @@ add_subdirectory(glfw)
 add_subdirectory(glad)
 
 # GLM - OpenGL Mathematics (header-only)
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/glm/CMakeLists.txt")
+    message(FATAL_ERROR "GLM submodule not initialized. Please run: git submodule update --init --recursive")
+endif()
+
 add_subdirectory(glm)
 
 # stb_image - Single-file image loading library
 add_subdirectory(stb)
 
 # ENet - Reliable UDP networking library
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/enet/CMakeLists.txt")
+    message(FATAL_ERROR "ENet submodule not initialized. Please run: git submodule update --init --recursive")
+endif()
+
 set(ENET_STATIC ON CACHE BOOL "" FORCE)
 set(ENET_SHARED OFF CACHE BOOL "" FORCE)
 add_subdirectory(enet)
 
 # Dear ImGui - Immediate-mode GUI library
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/imgui)
+
+if(NOT EXISTS "${IMGUI_DIR}/imgui.cpp")
+    message(FATAL_ERROR "ImGui submodule not initialized. Please run: git submodule update --init --recursive")
+endif()
+
 file(GLOB IMGUI_SOURCES
     ${IMGUI_DIR}/imgui.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
@@ -33,6 +50,10 @@ file(GLOB IMGUI_SOURCES
     ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
     ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
 )
+
+if(NOT IMGUI_SOURCES)
+    message(FATAL_ERROR "ImGui sources missing after glob. Ensure submodule contents are fetched correctly.")
+endif()
 
 add_library(imgui STATIC ${IMGUI_SOURCES})
 target_include_directories(imgui PUBLIC
@@ -52,6 +73,11 @@ endif()
 
 # Lua 5.4 - Scripting runtime
 set(LUA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lua)
+
+if(NOT EXISTS "${LUA_DIR}/lua.h")
+    message(FATAL_ERROR "Lua submodule not initialized. Please run: git submodule update --init --recursive")
+endif()
+
 file(GLOB LUA_SOURCES
     ${LUA_DIR}/lapi.c
     ${LUA_DIR}/lcode.c
@@ -87,6 +113,10 @@ file(GLOB LUA_SOURCES
     ${LUA_DIR}/linit.c
 )
 
+if(NOT LUA_SOURCES)
+    message(FATAL_ERROR "Lua sources missing after glob. Ensure submodule contents are fetched correctly.")
+endif()
+
 add_library(lua STATIC ${LUA_SOURCES})
 target_include_directories(lua PUBLIC ${LUA_DIR})
 if(UNIX AND NOT APPLE)
@@ -99,6 +129,11 @@ endif()
 
 # sol2 - Header-only Lua C++ binding (no build step)
 set(SOL2_DIR ${CMAKE_CURRENT_SOURCE_DIR}/sol2)
+
+if(NOT EXISTS "${SOL2_DIR}/include/sol/sol.hpp")
+    message(FATAL_ERROR "sol2 submodule not initialized. Please run: git submodule update --init --recursive")
+endif()
+
 target_include_directories(lua PUBLIC ${SOL2_DIR}/include)
 
 # Export library targets for use in main project

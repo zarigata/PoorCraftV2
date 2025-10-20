@@ -70,6 +70,14 @@ test_results/
 libs/*/build/
 libs/*/cmake-build-*/
 
+# Track submodule sources explicitly
+!libs/glfw/
+!libs/glm/
+!libs/enet/
+!libs/imgui/
+!libs/lua/
+!libs/sol2/
+
 # Generated files
 generated/
 *.generated.*

@@ -35,6 +35,20 @@ elseif(APPLE)
     set(PC_PLATFORM_MACOS ON)
 endif()
 
+# Verify that required submodules are initialized before proceeding
+function(poorcraft_require_file path message_hint)
+    if(NOT EXISTS "${path}")
+        message(FATAL_ERROR "Missing required dependency file: ${path}\n${message_hint}")
+    endif()
+endfunction()
+
+poorcraft_require_file("${CMAKE_CURRENT_SOURCE_DIR}/libs/glfw/CMakeLists.txt" "Run: git submodule update --init --recursive")
+poorcraft_require_file("${CMAKE_CURRENT_SOURCE_DIR}/libs/glm/CMakeLists.txt" "Run: git submodule update --init --recursive")
+poorcraft_require_file("${CMAKE_CURRENT_SOURCE_DIR}/libs/enet/CMakeLists.txt" "Run: git submodule update --init --recursive")
+poorcraft_require_file("${CMAKE_CURRENT_SOURCE_DIR}/libs/imgui/imgui.cpp" "Run: git submodule update --init --recursive")
+poorcraft_require_file("${CMAKE_CURRENT_SOURCE_DIR}/libs/lua/lua.h" "Run: git submodule update --init --recursive")
+poorcraft_require_file("${CMAKE_CURRENT_SOURCE_DIR}/libs/sol2/include/sol/sol.hpp" "Run: git submodule update --init --recursive")
+
 # Compiler flags
 if(MSVC)
     # MSVC specific flags
@@ -77,6 +91,13 @@ endif()
 # Add subdirectories
 add_subdirectory(libs)
 add_subdirectory(src)
+
+# Post-build validation to ensure executable exists
+add_custom_target(verify_poorcraft_binary ALL
+    COMMAND ${CMAKE_COMMAND} -E echo "Verifying PoorCraft executable existence..."
+    COMMAND ${CMAKE_COMMAND} -DEXPECTED_EXECUTABLE=$<TARGET_FILE:PoorCraft> -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyExecutable.cmake"
+    DEPENDS PoorCraft
+)
 
 # Assets and shaders directories (for organization)
 # add_subdirectory(shaders)

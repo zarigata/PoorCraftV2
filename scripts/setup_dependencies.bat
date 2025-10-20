@@ -4,6 +4,45 @@ REM This script initializes Git submodules and downloads additional dependencies
 
 setlocal enabledelayedexpansion
 
+set "FORCE_FLAG="
+set "DOWNLOAD_GLAD="
+
+:parse_args
+if "%~1"=="" goto :args_done
+if /i "%~1"=="--force" (
+    set "FORCE_FLAG=--force"
+    shift
+    goto :parse_args
+)
+if /i "%~1"=="--download-glad" (
+    set "DOWNLOAD_GLAD=1"
+    shift
+    goto :parse_args
+)
+if /i "%~1"=="--help" (
+    echo Usage: scripts\setup_dependencies.bat [--force] [--download-glad]
+    echo.
+    echo   --force           Retry submodule fetch with git's --force flag
+    echo   --download-glad   Attempt to download pre-generated GLAD files from mirror
+    echo   --help            Show this help message
+    exit /b 0
+)
+if /i "%~1"=="-h" (
+    goto :show_help
+)
+echo Unknown option: %~1
+exit /b 1
+
+:show_help
+echo Usage: scripts\setup_dependencies.bat [--force] [--download-glad]
+echo.
+echo   --force           Retry submodule fetch with git's --force flag
+echo   --download-glad   Attempt to download pre-generated GLAD files from mirror
+echo   --help            Show this help message
+exit /b 0
+
+:args_done
+
 REM Function to print colored output (simplified for Windows batch)
 call :print_info "PoorCraft Dependency Setup Script"
 call :print_info "This script will set up all required dependencies for PoorCraft"
@@ -35,26 +74,31 @@ if not exist "CMakeLists.txt" (
 
 call :print_success "Running from correct directory"
 
+call :check_network
+
+set "SUBMODULE_ARGS=--init --recursive"
+if defined FORCE_FLAG (
+    set "SUBMODULE_ARGS=%SUBMODULE_ARGS% --force"
+)
+
 REM Initialize and update Git submodules
 call :print_info "Setting up Git submodules..."
 
 if exist ".gitmodules" (
     call :print_info "Found .gitmodules file, initializing submodules..."
 
-    REM Check if submodules are already initialized
-    if exist "libs\glfw\.git" (
-        call :print_info "Submodules appear to be already initialized"
-        call :print_info "Updating existing submodules..."
-        git submodule update --init --recursive
-    ) else (
-        call :print_info "Initializing submodules for the first time..."
-        git submodule update --init --recursive
-    )
+    set /a _progress=0
+    set /a _total=6
 
-    if errorlevel 1 (
-        call :print_error "Failed to initialize Git submodules"
-        call :print_error "Please check your internet connection and try again"
-        exit /b 1
+    for %%S in (libs/glfw libs/glm libs/enet libs/imgui libs/lua libs/sol2) do (
+        set /a _progress+=1
+        call :print_info "Fetching %%S... !_progress!/%_total%"
+        git submodule update %SUBMODULE_ARGS% %%S
+        if errorlevel 1 (
+            call :print_error "Failed to initialize submodule: %%S"
+            call :print_error "Try rerunning with --force or inspect .gitmodules configuration"
+            exit /b 1
+        )
     )
 
     call :print_success "Git submodules updated successfully"
@@ -62,53 +106,23 @@ if exist ".gitmodules" (
     REM Verify submodules
     call :print_info "Verifying submodules..."
 
-    if not exist "libs\glfw" (
-        call :print_error "GLFW submodule not found after initialization"
-        goto :glad_setup
-    )
+    call :verify_file "libs\glfw\CMakeLists.txt"
+    call :ensure_directory_has_content "libs\glfw"
 
-    if not exist "libs\glm" (
-        call :print_error "GLM submodule not found after initialization"
-        goto :glad_setup
-    )
+    call :verify_file "libs\glm\CMakeLists.txt"
+    call :ensure_directory_has_content "libs\glm"
 
-    call :print_info "Initializing ENet submodule..."
-    git submodule update --init --recursive libs/enet
-    if errorlevel 1 (
-        call :print_error "Failed to initialize ENet submodule"
-        exit /b 1
-    )
-    call :print_success "ENet submodule initialized successfully"
+    call :verify_file "libs\enet\CMakeLists.txt"
+    call :ensure_directory_has_content "libs\enet"
 
-    call :print_info "Initializing ImGui submodule..."
-    git submodule update --init --recursive libs/imgui
-    if errorlevel 1 (
-        call :print_error "Failed to initialize ImGui submodule"
-        exit /b 1
-    )
-    call :print_success "ImGui submodule initialized successfully"
+    call :verify_file "libs\imgui\imgui.cpp"
+    call :ensure_directory_has_content "libs\imgui"
 
-    if not exist "libs\imgui" (
-        call :print_error "ImGui submodule not found after initialization"
-        call :print_error "Please check your internet connection and try again"
-        exit /b 1
-    )
+    call :verify_file "libs\lua\lua.h"
+    call :ensure_directory_has_content "libs\lua"
 
-    call :print_info "Initializing Lua submodule..."
-    git submodule update --init --recursive libs/lua
-    if errorlevel 1 (
-        call :print_error "Failed to initialize Lua submodule"
-        exit /b 1
-    )
-    call :print_success "Lua submodule initialized successfully"
-
-    call :print_info "Initializing sol2 submodule..."
-    git submodule update --init --recursive libs/sol2
-    if errorlevel 1 (
-        call :print_error "Failed to initialize sol2 submodule"
-        exit /b 1
-    )
-    call :print_success "sol2 submodule initialized successfully"
+    call :verify_file "libs\sol2\include\sol\sol.hpp"
+    call :ensure_directory_has_content "libs\sol2"
 
     call :print_success "All Git submodules verified"
 
@@ -123,12 +137,34 @@ call :print_info "Setting up GLAD (OpenGL function loader)..."
 
 if not exist "libs\glad" (
     call :print_info "Creating GLAD directory..."
-    mkdir "libs\glad" 2>nul
+    mkdir "libs\glad\include\glad" 2>nul
+    mkdir "libs\glad\include\KHR" 2>nul
+    mkdir "libs\glad\src" 2>nul
 )
 
 REM Check if GLAD files already exist
-if exist "libs\glad\include\glad\glad.h" (
-    call :print_info "GLAD files already exist, skipping setup"
+if exist "libs\glad\include\glad\glad.h" if exist "libs\glad\src\glad.c" goto :stb_setup
+
+if defined DOWNLOAD_GLAD (
+    call :print_info "Attempting to download GLAD loader from mirror..."
+    set "GLAD_BASE_URL=https://raw.githubusercontent.com/Dav1dde/glad/master"
+    curl -fL -o libs/glad/include/glad/glad.h %GLAD_BASE_URL%/include/glad/glad.h >nul 2>&1
+    if errorlevel 1 (
+        call :print_warning "curl failed, trying PowerShell"
+        powershell -Command "Invoke-WebRequest -Uri '%GLAD_BASE_URL%/include/glad/glad.h' -OutFile 'libs/glad/include/glad/glad.h'" >nul
+    )
+    curl -fL -o libs/glad/include/KHR/khrplatform.h %GLAD_BASE_URL%/include/KHR/khrplatform.h >nul 2>&1
+    if errorlevel 1 (
+        powershell -Command "Invoke-WebRequest -Uri '%GLAD_BASE_URL%/include/KHR/khrplatform.h' -OutFile 'libs/glad/include/KHR/khrplatform.h'" >nul
+    )
+    curl -fL -o libs/glad/src/glad.c %GLAD_BASE_URL%/src/glad.c >nul 2>&1
+    if errorlevel 1 (
+        powershell -Command "Invoke-WebRequest -Uri '%GLAD_BASE_URL%/src/glad.c' -OutFile 'libs/glad/src/glad.c'" >nul
+    )
+)
+
+if exist "libs\glad\include\glad\glad.h" if exist "libs\glad\src\glad.c" (
+    call :print_success "GLAD files downloaded successfully"
     goto :stb_setup
 )
 
@@ -142,10 +178,9 @@ call :print_info "4. Set 'Options' to 'Generate a loader'"
 call :print_info "5. Click 'Generate'"
 call :print_info "6. Download the ZIP file"
 call :print_info "7. Extract 'include/glad/glad.h' to libs/glad/include/glad/"
-call :print_info "8. Extract 'src/glad.c' to libs/glad/src/"
-call :print_info ""
-call :print_warning "GLAD setup requires manual intervention"
-call :print_warning "Please complete the steps above and run this script again"
+call :print_info "8. Extract 'include/KHR/khrplatform.h' to libs/glad/include/KHR/"
+call :print_info "9. Extract 'src/glad.c' to libs/glad/src/"
+call :print_error "GLAD setup requires manual intervention or rerun with --download-glad"
 pause
 exit /b 1
 
@@ -159,18 +194,15 @@ if not exist "libs\stb" (
 )
 
 REM Check if stb_image.h already exists
-if exist "libs\stb\stb_image.h" (
-    call :print_info "stb_image.h already exists, skipping download"
-    goto :verify_cmake
-)
+if exist "libs\stb\stb_image.h" goto :verify_cmake
 
 call :print_info "Downloading stb_image.h..."
 
 REM Try curl first, then powershell
-curl -L -o libs/stb/stb_image.h https://raw.githubusercontent.com/nothings/stb/master/stb_image.h 2>nul
+curl -L -o libs/stb/stb_image.h https://raw.githubusercontent.com/nothings/stb/master/stb_image.h >nul 2>&1
 if errorlevel 1 (
     call :print_info "curl failed, trying with PowerShell..."
-    powershell -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/nothings/stb/master/stb_image.h' -OutFile 'libs/stb/stb_image.h'"
+    powershell -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/nothings/stb/master/stb_image.h' -OutFile 'libs/stb/stb_image.h'" >nul
     if errorlevel 1 (
         call :print_error "Failed to download stb_image.h"
         call :print_error "Please manually download from:"
@@ -209,24 +241,23 @@ for %%f in (%REQUIRED_CMAKE_FILES%) do (
 REM Check for optional tools
 call :print_info "Checking for optional development tools..."
 
-REM Check for Visual Studio
 if exist "%ProgramFiles%\Microsoft Visual Studio" (
     call :print_success "Visual Studio found"
+) else if exist "%ProgramFiles(x86)%\Microsoft Visual Studio" (
+    call :print_success "Visual Studio found (x86)"
 ) else (
-    if exist "%ProgramFiles(x86)%\Microsoft Visual Studio" (
-        call :print_success "Visual Studio found (x86)"
-    ) else (
-        call :print_warning "Visual Studio not found"
-        call :print_warning "You may need to install Visual Studio or use MinGW"
-    )
+    call :print_warning "Visual Studio not found"
+    call :print_warning "You may need to install Visual Studio or use MinGW"
 )
 
 REM Show summary
 call :print_info ""
 call :print_info "=== Dependency Setup Summary ==="
-call :print_success "Git submodules: Initialized"
-call :print_success "GLFW: Ready"
-call :print_success "GLM: Ready"
+for /f "delims=" %%l in ('git submodule status --recursive ^| findstr /r /c:"^"') do (
+    call :print_success "Submodule: %%l"
+)
+call :print_success "GLFW: Verified"
+call :print_success "GLM: Verified"
 call :print_success "GLAD: Ready"
 call :print_success "stb_image: Ready"
 call :print_success "CMake configuration: Verified"
@@ -236,8 +267,9 @@ REM Show next steps
 call :print_info "Next steps:"
 call :print_info "1. Run the build script: scripts\build.bat"
 call :print_info "2. Or build manually: cmake -B build ^&^& cmake --build build"
-call :print_info "3. See docs\BUILD.md for detailed build instructions"
-call :print_info "4. Check docs\CONTRIBUTING.md for development guidelines"
+call :print_info "3. Run scripts\verify_build.bat after building to validate artifacts"
+call :print_info "4. See docs\BUILD.md for detailed build instructions"
+call :print_info "5. Check docs\CONTRIBUTING.md for development guidelines"
 
 call :print_success "Dependency setup completed successfully!"
 call :print_info "You can now build the PoorCraft engine"
@@ -259,4 +291,36 @@ goto :eof
 
 :print_error
 echo [ERROR] %~1
+goto :eof
+
+:check_network
+call :print_info "Checking network connectivity..."
+ping -n 1 github.com >nul 2>&1
+if errorlevel 1 (
+    powershell -Command "Resolve-DnsName github.com" >nul 2>&1
+    if errorlevel 1 (
+        call :print_error "Unable to reach github.com"
+        call :print_error "Please verify your internet connection or firewall settings"
+        exit /b 1
+    )
+)
+call :print_success "Network connectivity verified"
+goto :eof
+
+:verify_file
+if not exist "%~1" (
+    call :print_error "Expected file missing: %~1"
+    exit /b 1
+)
+goto :eof
+
+:ensure_directory_has_content
+set "_dir=%~1"
+for %%i in ("!_dir!\*.*") do (
+    if /i not "%%~nxi"==".git" if /i not "%%~nxi"==".gitignore" if /i not "%%~nxi"==".gitkeep" goto :dir_ok
+)
+call :print_error "Directory appears empty: %~1"
+call :print_error "Submodule content may not have been fetched"
+exit /b 1
+:dir_ok
 goto :eof
