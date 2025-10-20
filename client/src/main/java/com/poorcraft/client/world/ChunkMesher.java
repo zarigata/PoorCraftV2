@@ -3,6 +3,8 @@ package com.poorcraft.client.world;
 import com.poorcraft.common.world.block.BlockType;
 import com.poorcraft.common.world.chunk.Chunk;
 
+import java.util.function.Function;
+
 /**
  * Implements greedy meshing algorithm for chunk rendering.
  */
@@ -10,6 +12,7 @@ public class ChunkMesher {
     
     private final Chunk chunk;
     private final Chunk[] neighbors; // [North, South, East, West]
+    private final Function<String, Integer> textureLayerLookup;
     
     // Face directions: 0=bottom, 1=top, 2=north, 3=south, 4=west, 5=east
     private static final int[][] FACE_NORMALS = {
@@ -40,6 +43,9 @@ public class ChunkMesher {
     public ChunkMesh mesh() {
         ChunkMesh mesh = new ChunkMesh();
         
+        // Chunk dimensions: X=16, Y=256, Z=16
+        int[] dims = {16, 256, 16};
+        
         // Process each axis
         for (int axis = 0; axis < 3; axis++) {
             int u = (axis + 1) % 3;
@@ -48,18 +54,23 @@ public class ChunkMesher {
             int[] x = new int[3];
             int[] q = new int[3];
             
-            boolean[] mask = new boolean[16 * 256];
-            BlockType[] maskBlocks = new BlockType[16 * 256];
+            // Compute mask dimensions for this axis
+            int uDim = dims[u];
+            int vDim = dims[v];
+            int maskSize = uDim * vDim;
+            
+            boolean[] mask = new boolean[maskSize];
+            BlockType[] maskBlocks = new BlockType[maskSize];
             
             q[axis] = 1;
             
             // Process both directions along this axis
             for (int direction = -1; direction <= 1; direction += 2) {
-                for (x[axis] = -1; x[axis] < 16;) {
+                for (x[axis] = -1; x[axis] < dims[axis];) {
                     // Build mask
                     int n = 0;
-                    for (x[v] = 0; x[v] < 16; x[v]++) {
-                        for (x[u] = 0; x[u] < 256; x[u]++) {
+                    for (x[v] = 0; x[v] < vDim; x[v]++) {
+                        for (x[u] = 0; x[u] < uDim; x[u]++) {
                             BlockType blockCurrent = getBlock(x[0], x[1], x[2]);
                             BlockType blockCompare = getBlock(x[0] + q[0] * direction, 
                                                              x[1] + q[1] * direction, 
@@ -76,21 +87,21 @@ public class ChunkMesher {
                     
                     // Generate mesh from mask using greedy algorithm
                     n = 0;
-                    for (int j = 0; j < 16; j++) {
-                        for (int i = 0; i < 256;) {
+                    for (int j = 0; j < vDim; j++) {
+                        for (int i = 0; i < uDim;) {
                             if (mask[n]) {
                                 BlockType block = maskBlocks[n];
                                 
                                 // Compute width
                                 int w;
-                                for (w = 1; i + w < 256 && mask[n + w] && maskBlocks[n + w] == block; w++) {}
+                                for (w = 1; i + w < uDim && mask[n + w] && maskBlocks[n + w] == block; w++) {}
                                 
                                 // Compute height
                                 boolean done = false;
                                 int h;
-                                for (h = 1; j + h < 16; h++) {
+                                for (h = 1; j + h < vDim; h++) {
                                     for (int k = 0; k < w; k++) {
-                                        if (!mask[n + k + h * 256] || maskBlocks[n + k + h * 256] != block) {
+                                        if (!mask[n + k + h * uDim] || maskBlocks[n + k + h * uDim] != block) {
                                             done = true;
                                             break;
                                         }
@@ -113,7 +124,7 @@ public class ChunkMesher {
                                 // Clear mask
                                 for (int l = 0; l < h; l++) {
                                     for (int k = 0; k < w; k++) {
-                                        mask[n + k + l * 256] = false;
+                                        mask[n + k + l * uDim] = false;
                                     }
                                 }
                                 

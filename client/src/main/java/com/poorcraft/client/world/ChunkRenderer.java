@@ -108,6 +108,7 @@ public class ChunkRenderer {
         shader.setUniform("uFogStart", 100.0f);
         shader.setUniform("uFogEnd", 200.0f);
         shader.setUniform("uFogColor", new Vector3f(0.5f, 0.7f, 1.0f));
+        shader.setUniform("uCameraPos", camera.getPosition());
         
         int renderedChunks = 0;
         

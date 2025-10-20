@@ -168,4 +168,14 @@ public class World implements Updatable, Renderable {
     public long getSeed() {
         return seed;
     }
+    
+    /**
+     * Gets the texture layer index for a given texture name.
+     * 
+     * @param textureName Name of the texture
+     * @return Layer index, or 0 if not found
+     */
+    public int getTextureLayer(String textureName) {
+        return blockAtlas.getTextureIndex(textureName);
+    }
 }

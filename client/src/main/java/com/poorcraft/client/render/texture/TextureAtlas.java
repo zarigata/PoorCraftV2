@@ -36,6 +36,16 @@ public class TextureAtlas implements AutoCloseable {
     private final Map<String, Integer> layerMap;
     
     /**
+     * Creates a new texture atlas with default max layers.
+     * 
+     * @param tileSize Size of each texture tile (e.g., 16x16)
+     * @param maxLayers Maximum number of layers in the array
+     */
+    public TextureAtlas(int tileSize, int maxLayers) {
+        this(tileSize, maxLayers, GLInfo.getInstance());
+    }
+    
+    /**
      * Creates a new texture atlas.
      * 
      * @param tileSize Size of each texture tile (e.g., 16x16)
@@ -167,6 +177,15 @@ public class TextureAtlas implements AutoCloseable {
     }
     
     /**
+     * Builds the atlas by generating mipmaps.
+     * Should be called after all textures are added.
+     */
+    public void build() {
+        generateMipmaps();
+        LOGGER.info("Built texture atlas with {} layers", currentLayer);
+    }
+    
+    /**
      * Generates mipmaps for the atlas.
      * Should be called after all textures are added.
      */
@@ -192,6 +211,16 @@ public class TextureAtlas implements AutoCloseable {
     }
     
     /**
+     * Gets the texture index for a texture name (alias for getLayer).
+     * 
+     * @param name The texture name
+     * @return The texture index, or 0 if not found
+     */
+    public int getTextureIndex(String name) {
+        return layerMap.getOrDefault(name, 0);
+    }
+    
+    /**
      * Binds the atlas to a texture unit.
      * 
      * @param unit The texture unit (0-based)
@@ -209,8 +238,16 @@ public class TextureAtlas implements AutoCloseable {
         return currentLayer;
     }
     
+    public int getTextureCount() {
+        return currentLayer;
+    }
+    
     public int getId() {
         return textureId;
+    }
+    
+    public void cleanup() {
+        close();
     }
     
     @Override
