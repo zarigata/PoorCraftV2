@@ -1,0 +1,33 @@
+# PoorCraft Server Configuration
+
+network:
+  serverPort: 25565
+  bindAddress: 0.0.0.0
+  maxPlayers: 20
+  connectionTimeout: 30000
+  compressionThreshold: 256
+
+world:
+  name: world
+  seed: 0
+  gameMode: survival
+  difficulty: normal
+  spawnProtectionRadius: 16
+  viewDistance: 10
+
+performance:
+  tickRate: 20
+  chunkLoadingThreads: 4
+  entityUpdateDistance: 128
+
+mods:
+  enableDistribution: true
+  directory: mods
+  requiredMods: []
+
+security:
+  enableWhitelist: false
+  enableAuthentication: true
+  rconEnabled: false
+  rconPort: 25575
+  rconPassword: ""

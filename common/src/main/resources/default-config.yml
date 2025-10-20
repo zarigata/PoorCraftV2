@@ -1,0 +1,34 @@
+# Default PoorCraft Configuration
+
+game:
+  language: en_US
+  renderDistance: 8
+  fov: 70
+  mouseSensitivity: 1.0
+
+graphics:
+  vsync: true
+  maxFps: 60
+  quality: medium
+  shadows: true
+  particles: all
+
+audio:
+  masterVolume: 1.0
+  musicVolume: 0.5
+  soundVolume: 1.0
+
+network:
+  serverPort: 25565
+  connectionTimeout: 30000
+  maxPlayers: 20
+
+world:
+  seed: 0
+  gameMode: survival
+  difficulty: normal
+  spawnProtectionRadius: 16
+
+mods:
+  directory: mods
+  autoDownload: false

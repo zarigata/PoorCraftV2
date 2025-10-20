@@ -1,0 +1,148 @@
+package com.poorcraft.server;
+
+import com.poorcraft.common.Constants;
+import com.poorcraft.common.config.Configuration;
+import com.poorcraft.common.util.Logger;
+import org.slf4j.Logger;
+
+import java.io.IOException;
+import java.nio.file.Paths;
+
+/**
+ * Main entry point for the PoorCraft dedicated server.
+ * 
+ * <p>This is a placeholder implementation for Phase 1. Phase 5 will add:
+ * <ul>
+ *   <li>Netty server initialization</li>
+ *   <li>World loading and management</li>
+ *   <li>Player connection handling</li>
+ *   <li>Server console with JLine</li>
+ *   <li>Server tick loop</li>
+ * </ul>
+ */
+public class Main {
+    private static final Logger LOGGER = Logger.getLogger(Main.class);
+    
+    public static void main(String[] args) {
+        LOGGER.info("=== {} Server v{} ===", Constants.Game.NAME, Constants.Game.VERSION);
+        LOGGER.info("Java Version: {}", System.getProperty("java.version"));
+        LOGGER.info("OS: {} {} ({})", 
+            System.getProperty("os.name"),
+            System.getProperty("os.version"),
+            System.getProperty("os.arch")
+        );
+        
+        // Parse command line arguments
+        ServerConfig serverConfig = parseArguments(args);
+        
+        // Add shutdown hook for graceful cleanup
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            LOGGER.info("Shutting down server...");
+            // TODO Phase 5: Save world
+            // TODO Phase 5: Disconnect all players
+            // TODO Phase 5: Shutdown Netty
+        }, "Shutdown-Hook"));
+        
+        try {
+            // Load server configuration
+            Configuration config;
+            try {
+                config = new Configuration(Paths.get("config", "server.yml"));
+            } catch (IOException e) {
+                LOGGER.warn("Could not load server configuration, using defaults", e);
+                config = new Configuration();
+            }
+            
+            // Get server port from config or command line
+            int port = serverConfig.port != -1 ? 
+                serverConfig.port : 
+                config.getInt("network.serverPort", Constants.Network.DEFAULT_SERVER_PORT);
+            
+            LOGGER.info("Server starting on port {}...", port);
+            
+            // TODO Phase 5: Initialize Netty server
+            // TODO Phase 5: Load world
+            // TODO Phase 5: Start server tick loop
+            // TODO Phase 5: Initialize console
+            
+            LOGGER.info("Server initialization complete");
+            LOGGER.info("Press Ctrl+C to stop (server loop not yet implemented)");
+            
+            // Placeholder: Keep application running
+            // In Phase 5, this will be replaced by the server tick loop
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            
+            LOGGER.info("Server stopped");
+            
+        } catch (Exception e) {
+            LOGGER.error("Fatal error in server", e);
+            System.exit(1);
+        }
+    }
+    
+    /**
+     * Parses command line arguments.
+     * 
+     * @param args Command line arguments
+     * @return Parsed server configuration
+     */
+    private static ServerConfig parseArguments(String[] args) {
+        ServerConfig config = new ServerConfig();
+        
+        for (int i = 0; i < args.length; i++) {
+            switch (args[i]) {
+                case "--port":
+                case "-p":
+                    if (i + 1 < args.length) {
+                        try {
+                            config.port = Integer.parseInt(args[++i]);
+                        } catch (NumberFormatException e) {
+                            LOGGER.warn("Invalid port number: {}", args[i]);
+                        }
+                    }
+                    break;
+                    
+                case "--world":
+                case "-w":
+                    if (i + 1 < args.length) {
+                        config.worldName = args[++i];
+                    }
+                    break;
+                    
+                case "--help":
+                case "-h":
+                    printHelp();
+                    System.exit(0);
+                    break;
+            }
+        }
+        
+        return config;
+    }
+    
+    /**
+     * Prints command line help.
+     */
+    private static void printHelp() {
+        System.out.println("PoorCraft Server v" + Constants.Game.VERSION);
+        System.out.println();
+        System.out.println("Usage: java -jar poorcraft-server.jar [options]");
+        System.out.println();
+        System.out.println("Options:");
+        System.out.println("  -p, --port <port>     Server port (default: 25565)");
+        System.out.println("  -w, --world <name>    World name (default: world)");
+        System.out.println("  -h, --help            Show this help message");
+    }
+    
+    /**
+     * Server configuration from command line arguments.
+     */
+    private static class ServerConfig {
+        int port = -1;
+        String worldName = "world";
+    }
+}

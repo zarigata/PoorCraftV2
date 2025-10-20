@@ -1,0 +1,28 @@
+dependencies {
+    // Only depend on common module to keep API clean
+    api project(':common')
+    
+    // Logging interface only
+    api "org.slf4j:slf4j-api:${slf4jVersion}"
+}
+
+jar {
+    archiveBaseName = 'poorcraft-modapi'
+}
+
+// Generate Javadoc JAR for mod developers
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+
+javadoc {
+    options.encoding = 'UTF-8'
+    options.charSet = 'UTF-8'
+    options.author = true
+    options.version = true
+    options.links(
+        'https://docs.oracle.com/en/java/javase/17/docs/api/',
+        'https://www.slf4j.org/apidocs/'
+    )
+}

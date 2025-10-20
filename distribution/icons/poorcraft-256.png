@@ -1,0 +1,9 @@
+# Placeholder for Linux icon file
+# This should be replaced with an actual 256x256 PNG file
+# For now, this is a text placeholder to establish the file structure
+# 
+# To create a proper PNG icon:
+# 1. Design a 256x256 pixel icon
+# 2. Save as PNG with transparency (alpha channel)
+# 3. Optimize the file size if needed
+# 4. Replace this file with the actual binary PNG file

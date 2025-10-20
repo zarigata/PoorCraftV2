@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch4jConfig>
+  <dontWrapJar>false</dontWrapJar>
+  <headerType>gui</headerType>
+  <jar>../client/build/libs/poorcraft-client-0.1.0-SNAPSHOT.jar</jar>
+  <outfile>../build/distributions/windows/PoorCraft.exe</outfile>
+  <errTitle>PoorCraft</errTitle>
+  <cmdLine></cmdLine>
+  <chdir>.</chdir>
+  <priority>normal</priority>
+  <downloadUrl>https://www.java.com/download/</downloadUrl>
+  <supportUrl></supportUrl>
+  <stayAlive>false</stayAlive>
+  <restartOnCrash>false</restartOnCrash>
+  <manifest></manifest>
+  <icon>icons/poorcraft.ico</icon>
+  <jre>
+    <path></path>
+    <bundledJre64Bit>false</bundledJre64Bit>
+    <bundledJreAsFallback>false</bundledJreAsFallback>
+    <minVersion>17</minVersion>
+    <maxVersion></maxVersion>
+    <jdkPreference>preferJre</jdkPreference>
+    <runtimeBits>64/32</runtimeBits>
+    <opt>-Xmx2G</opt>
+    <opt>-XX:+UseG1GC</opt>
+  </jre>
+  <versionInfo>
+    <fileVersion>0.1.0.0</fileVersion>
+    <txtFileVersion>0.1.0-SNAPSHOT</txtFileVersion>
+    <fileDescription>PoorCraft - An open-source Minecraft clone</fileDescription>
+    <copyright>Copyright (C) 2024 PoorCraft Development Team</copyright>
+    <productVersion>0.1.0.0</productVersion>
+    <txtProductVersion>0.1.0-SNAPSHOT</txtProductVersion>
+    <productName>PoorCraft</productName>
+    <companyName>PoorCraft Development Team</companyName>
+    <internalName>poorcraft</internalName>
+    <originalFilename>PoorCraft.exe</originalFilename>
+  </versionInfo>
+</launch4jConfig>

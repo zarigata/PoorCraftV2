@@ -1,0 +1,58 @@
+# Build outputs
+build/
+out/
+*.class
+*.jar
+*.war
+*.ear
+target/
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.eclipse/
+.settings/
+.classpath
+.project
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Distribution
+dist/
+release/
+*.exe
+*.deb
+*.rpm
+*.dmg
+*.app
+
+# Native libraries (if extracted)
+natives/
+
+# User-specific
+run/
+saves/
+config/
+mods/
+!mods/README.md
+
+# Temporary files
+tmp/
+temp/
+*.tmp

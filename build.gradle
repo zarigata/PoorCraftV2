@@ -1,0 +1,66 @@
+plugins {
+    id 'java'
+}
+
+allprojects {
+    group = 'com.poorcraft'
+    version = project.findProperty('projectVersion') ?: '0.1.0-SNAPSHOT'
+    
+    repositories {
+        mavenCentral()
+        // Uncomment for LWJGL snapshots if needed
+        // maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    
+    tasks.withType(JavaCompile) {
+        options.encoding = 'UTF-8'
+        options.compilerArgs << '-Xlint:unchecked' << '-Xlint:deprecation'
+    }
+    
+    // Define common dependency versions
+    ext {
+        lwjglVersion = project.findProperty('lwjglVersion') ?: '3.3.3'
+        log4jVersion = project.findProperty('log4jVersion') ?: '2.20.0'
+        slf4jVersion = project.findProperty('slf4jVersion') ?: '2.0.9'
+        snakeYamlVersion = project.findProperty('snakeYamlVersion') ?: '2.2'
+        junitVersion = '5.10.0'
+        
+        // Determine native classifier based on OS
+        lwjglNatives = {
+            def osName = System.getProperty('os.name').toLowerCase()
+            def osArch = System.getProperty('os.arch').toLowerCase()
+            
+            if (osName.contains('win')) {
+                return 'natives-windows'
+            } else if (osName.contains('linux')) {
+                return 'natives-linux'
+            } else if (osName.contains('mac')) {
+                return osArch.contains('aarch64') || osArch.contains('arm') ? 
+                    'natives-macos-arm64' : 'natives-macos'
+            }
+            return null
+        }()
+    }
+    
+    dependencies {
+        // Common test dependencies
+        testImplementation "org.junit.jupiter:junit-jupiter-api:${junitVersion}"
+        testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:${junitVersion}"
+    }
+    
+    test {
+        useJUnitPlatform()
+    }
+}

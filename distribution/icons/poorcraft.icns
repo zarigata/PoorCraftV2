@@ -1,0 +1,10 @@
+# Placeholder for macOS icon file
+# This should be replaced with an actual .icns file containing multiple resolutions
+# For now, this is a text placeholder to establish the file structure
+# 
+# To create a proper .icns file:
+# 1. Design icons at various sizes (16x16 to 512x512, including @2x versions)
+# 2. Use iconutil on macOS or a third-party tool
+# 3. Create an iconset directory with all required sizes
+# 4. Convert to .icns using: iconutil -c icns YourIconset.iconset
+# 5. Replace this file with the actual binary .icns file

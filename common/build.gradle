@@ -1,0 +1,17 @@
+dependencies {
+    // Logging
+    implementation "org.slf4j:slf4j-api:${slf4jVersion}"
+    
+    // Configuration parsing
+    implementation "org.yaml:snakeyaml:${snakeYamlVersion}"
+    
+    // JSON handling
+    implementation "com.google.code.gson:gson:${gsonVersion}"
+    
+    // Utilities
+    implementation "org.apache.commons:commons-lang3:${commonsLang3Version}"
+}
+
+jar {
+    archiveBaseName = 'poorcraft-common'
+}

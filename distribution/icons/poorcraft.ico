@@ -1,0 +1,9 @@
+# Placeholder for Windows icon file
+# This should be replaced with an actual .ico file containing multiple resolutions
+# For now, this is a text placeholder to establish the file structure
+# 
+# To create a proper .ico file:
+# 1. Design icons at 16x16, 32x32, 48x48, and 256x256 pixels
+# 2. Use a tool like ImageMagick, GIMP, or online converter
+# 3. Combine all sizes into a single .ico file
+# 4. Replace this file with the actual binary .ico file
