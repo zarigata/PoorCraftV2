@@ -8,6 +8,8 @@
 #include "poorcraft/resource/ResourceManager.h"
 #include "poorcraft/resource/BinaryResource.h"
 #include "poorcraft/rendering/Renderer.h"
+#include "poorcraft/rendering/RenderBackend.h"
+#include "poorcraft/rendering/GPUCapabilities.h"
 #include "poorcraft/rendering/Camera.h"
 #include "poorcraft/rendering/Shader.h"
 #include "poorcraft/rendering/Texture.h"
@@ -175,11 +177,42 @@ int main(int argc, char* argv[]) {
             });
 
         // Initialize Renderer after window creation
-        PC_INFO("=== Initializing Renderer ===");
+        PC_INFO("=== Initializing Rendering Backend ===");
+        
+        // Query GPU capabilities (both OpenGL and Vulkan)
+        PoorCraft::GPUCapabilities::getInstance().query();
+        
+        // Determine rendering backend from config
+        int backendValue = config.get_int(poorcraft::Config::GraphicsConfig::RENDERING_BACKEND_KEY, 0);
+        PoorCraft::RenderBackendType backendType = static_cast<PoorCraft::RenderBackendType>(backendValue);
+        
+        // Validate backend selection against GPU capabilities
+        if (backendType == PoorCraft::RenderBackendType::VULKAN_RT) {
+            if (!PoorCraft::GPUCapabilities::getInstance().supportsRayTracingPipeline()) {
+                PC_WARN("Ray tracing not supported on this GPU, falling back to Vulkan raster");
+                backendType = PoorCraft::RenderBackendType::VULKAN;
+            }
+        }
+        if (backendType == PoorCraft::RenderBackendType::VULKAN || backendType == PoorCraft::RenderBackendType::VULKAN_RT) {
+            if (!PoorCraft::GPUCapabilities::getInstance().supportsVulkan()) {
+                PC_WARN("Vulkan not supported, falling back to OpenGL");
+                backendType = PoorCraft::RenderBackendType::OPENGL;
+            }
+        }
+        
+        // For now, we still initialize the existing Renderer (OpenGL path)
+        // Full backend integration would require refactoring the game loop
+        // The backend system is in place and can be activated in future phases
         if (!PoorCraft::Renderer::getInstance().initialize()) {
             PC_FATAL("Failed to initialize renderer");
             PoorCraft::Window::terminateGLFW();
             return 1;
+        }
+        
+        PC_INFO("Rendering backend: OpenGL 4.6 (active)");
+        if (backendType != PoorCraft::RenderBackendType::OPENGL) {
+            PC_INFO("Note: Vulkan backend selected in config but not yet integrated into game loop");
+            PC_INFO("Backend switching will be fully enabled in Phase 11");
         }
 
         // Create camera with perspective projection

@@ -43,6 +43,13 @@ target_link_libraries(imgui PUBLIC glfw)
 target_link_libraries(imgui PUBLIC glad)
 target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLAD)
 
+# Add Vulkan backend if available
+if(Vulkan_FOUND)
+    target_sources(imgui PRIVATE ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp)
+    target_link_libraries(imgui PUBLIC Vulkan::Vulkan)
+    target_compile_definitions(imgui PUBLIC IMGUI_IMPL_VULKAN_SUPPORT)
+endif()
+
 # Lua 5.4 - Scripting runtime
 set(LUA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lua)
 file(GLOB LUA_SOURCES

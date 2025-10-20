@@ -104,6 +104,7 @@ bool GPUCapabilities::query() {
     m_Data.supportsDebugOutput = hasExtension(m_Extensions, "GL_KHR_debug");
 
     queryVRAM();
+    queryVulkan();
 
     printCapabilities();
 
@@ -256,6 +257,51 @@ void GPUCapabilities::queryVRAM() {
         PC_WARN("GL_ATI_meminfo extension detected but enums not available in GLAD headers");
 #endif
     }
+}
+
+void GPUCapabilities::queryVulkan() {
+#ifdef POORCRAFT_VULKAN_SUPPORT
+    // Query Vulkan capabilities
+    // Note: This is a simplified query that doesn't create a full Vulkan context
+    // For full capabilities, VulkanContext should be used
+    
+    PC_INFO("Querying Vulkan capabilities...");
+    
+    // Check if Vulkan is available by attempting to load the library
+    // In a real implementation, we would enumerate physical devices
+    // For now, we'll just set a flag based on compile-time support
+    m_Data.vulkanSupported = true;
+    m_Data.vulkanVersionString = "1.3.0"; // Placeholder
+    m_Data.supportsRayTracing = false; // Will be determined at runtime by VulkanContext
+    
+    PC_INFO("Vulkan support: Available (compile-time)");
+    PC_INFO("Note: Full Vulkan capabilities will be queried when Vulkan backend is initialized");
+#else
+    m_Data.vulkanSupported = false;
+    m_Data.vulkanVersionString = "Not compiled";
+    m_Data.supportsRayTracing = false;
+    PC_INFO("Vulkan support: Not compiled");
+#endif
+}
+
+bool GPUCapabilities::supportsVulkan() const {
+    return m_Data.vulkanSupported;
+}
+
+bool GPUCapabilities::supportsRayTracingPipeline() const {
+    return m_Data.supportsRayTracing;
+}
+
+const std::string& GPUCapabilities::getVulkanVersion() const {
+    return m_Data.vulkanVersionString;
+}
+
+uint32_t GPUCapabilities::getShaderGroupHandleSize() const {
+    return m_Data.shaderGroupHandleSize;
+}
+
+uint32_t GPUCapabilities::getMaxRayRecursionDepth() const {
+    return m_Data.maxRayRecursionDepth;
 }
 
 } // namespace PoorCraft

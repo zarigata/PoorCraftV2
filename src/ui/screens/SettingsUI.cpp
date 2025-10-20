@@ -4,6 +4,7 @@
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/rendering/Camera.h"
 #include "poorcraft/rendering/Renderer.h"
+#include "poorcraft/rendering/GPUCapabilities.h"
 #include "poorcraft/ui/GameState.h"
 #include "poorcraft/window/Window.h"
 
@@ -76,6 +77,38 @@ void SettingsUI::render() {
                 ImGui::SliderInt("Field of View", &m_TempFov, MIN_FOV, MAX_FOV);
                 ImGui::SliderInt("Render Distance", &m_TempRenderDistance, MIN_RENDER_DISTANCE, MAX_RENDER_DISTANCE);
 
+                ImGui::Separator();
+                ImGui::Text("Rendering Backend");
+
+                // Backend selection combo box
+                const char* backends[] = {"OpenGL 4.6", "Vulkan", "Vulkan + Ray Tracing"};
+                int currentBackend = m_Config.get_int(Config::GraphicsConfig::RENDERING_BACKEND_KEY, 0);
+                ImGui::Combo("Backend", &m_TempRenderingBackend, backends, 3);
+
+                // Show warning if backend change requires restart
+                if (m_TempRenderingBackend != currentBackend) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Changing backend requires restart");
+                }
+
+                // Show RT options only if Vulkan+RT selected
+                if (m_TempRenderingBackend == 2) {
+                    ImGui::Separator();
+                    ImGui::Text("Ray Tracing Settings");
+                    
+                    // Check if RT is supported
+                    bool rtSupported = GPUCapabilities::getInstance().supportsRayTracingPipeline();
+                    if (!rtSupported) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Ray tracing not supported on this GPU");
+                        ImGui::TextWrapped("Requires NVIDIA RTX 20-series+, AMD RDNA2+, or Intel Arc");
+                    } else {
+                        ImGui::SliderFloat("Resolution Scale", &m_TempRTResolutionScale, 0.5f, 2.0f, "%.2f");
+                        ImGui::SliderInt("Samples Per Pixel", &m_TempRTSamplesPerPixel, 1, 16);
+                        ImGui::SliderInt("Max Bounces", &m_TempRTMaxBounces, 1, 4);
+                        ImGui::Checkbox("Enable Reflections", &m_TempRTEnableReflections);
+                        ImGui::Checkbox("Enable Shadows", &m_TempRTEnableShadows);
+                    }
+                }
+
                 ImGui::EndTabItem();
             }
 
@@ -132,6 +165,14 @@ void SettingsUI::applyGraphicsSettings() {
     m_Config.set_int(Config::GraphicsConfig::FOV_KEY, m_TempFov);
     m_Config.set_int(Config::GameplayConfig::RENDER_DISTANCE_KEY, m_TempRenderDistance);
 
+    // Save backend settings
+    m_Config.set_int(Config::GraphicsConfig::RENDERING_BACKEND_KEY, m_TempRenderingBackend);
+    m_Config.set_float(Config::GraphicsConfig::RT_RESOLUTION_SCALE_KEY, m_TempRTResolutionScale);
+    m_Config.set_int(Config::GraphicsConfig::RT_SAMPLES_PER_PIXEL_KEY, m_TempRTSamplesPerPixel);
+    m_Config.set_int(Config::GraphicsConfig::RT_MAX_BOUNCES_KEY, m_TempRTMaxBounces);
+    m_Config.set_bool(Config::GraphicsConfig::RT_ENABLE_REFLECTIONS_KEY, m_TempRTEnableReflections);
+    m_Config.set_bool(Config::GraphicsConfig::RT_ENABLE_SHADOWS_KEY, m_TempRTEnableShadows);
+
     m_Window.setSize(static_cast<uint32_t>(m_TempWidth), static_cast<uint32_t>(m_TempHeight));
     m_Window.setFullscreen(m_TempFullscreen);
     m_Window.setVSync(m_TempVsync);
@@ -172,6 +213,14 @@ void SettingsUI::loadCurrentSettings() {
     m_TempVsync = m_Config.get_bool(Config::GraphicsConfig::VSYNC_KEY, m_TempVsync);
     m_TempFov = m_Config.get_int(Config::GraphicsConfig::FOV_KEY, m_TempFov);
     m_TempRenderDistance = m_Config.get_int(Config::GameplayConfig::RENDER_DISTANCE_KEY, m_TempRenderDistance);
+
+    // Load backend settings
+    m_TempRenderingBackend = m_Config.get_int(Config::GraphicsConfig::RENDERING_BACKEND_KEY, 0);
+    m_TempRTResolutionScale = m_Config.get_float(Config::GraphicsConfig::RT_RESOLUTION_SCALE_KEY, 1.0f);
+    m_TempRTSamplesPerPixel = m_Config.get_int(Config::GraphicsConfig::RT_SAMPLES_PER_PIXEL_KEY, 1);
+    m_TempRTMaxBounces = m_Config.get_int(Config::GraphicsConfig::RT_MAX_BOUNCES_KEY, 1);
+    m_TempRTEnableReflections = m_Config.get_bool(Config::GraphicsConfig::RT_ENABLE_REFLECTIONS_KEY, false);
+    m_TempRTEnableShadows = m_Config.get_bool(Config::GraphicsConfig::RT_ENABLE_SHADOWS_KEY, true);
 
     m_TempMasterVolume = m_Config.get_float(Config::AudioConfig::MASTER_VOLUME_KEY, m_TempMasterVolume);
     m_TempMusicVolume = m_Config.get_float(Config::AudioConfig::MUSIC_VOLUME_KEY, m_TempMusicVolume);

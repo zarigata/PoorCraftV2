@@ -56,6 +56,24 @@ endif()
 # Enable folders in IDEs that support it
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+# Find Vulkan SDK (required for Vulkan backend and ray tracing)
+find_package(Vulkan)
+if(Vulkan_FOUND)
+    message(STATUS "Vulkan SDK found: ${Vulkan_VERSION}")
+    add_compile_definitions(POORCRAFT_VULKAN_SUPPORT)
+else()
+    message(WARNING "Vulkan SDK not found. Vulkan backend will be disabled. Install Vulkan SDK from https://vulkan.lunarg.com/")
+endif()
+
+# Find glslangValidator for SPIR-V shader compilation
+find_program(GLSLANG_VALIDATOR glslangValidator)
+if(GLSLANG_VALIDATOR)
+    message(STATUS "glslangValidator found: ${GLSLANG_VALIDATOR}")
+    add_compile_definitions(POORCRAFT_SPIRV_COMPILER_AVAILABLE)
+else()
+    message(WARNING "glslangValidator not found. SPIR-V shaders will not be compiled automatically.")
+endif()
+
 # Add subdirectories
 add_subdirectory(libs)
 add_subdirectory(src)

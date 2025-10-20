@@ -44,6 +44,13 @@ struct GPUCapabilitiesData {
 
     std::size_t totalVRAMMB = 0;
     std::size_t availableVRAMMB = 0;
+
+    // Vulkan capabilities
+    bool vulkanSupported = false;
+    std::string vulkanVersionString;
+    bool supportsRayTracing = false;
+    uint32_t shaderGroupHandleSize = 0;
+    uint32_t maxRayRecursionDepth = 0;
 };
 
 class GPUCapabilities {
@@ -84,11 +91,19 @@ public:
 
     void printCapabilities() const;
 
+    // Vulkan capabilities
+    bool supportsVulkan() const;
+    bool supportsRayTracingPipeline() const;
+    const std::string& getVulkanVersion() const;
+    uint32_t getShaderGroupHandleSize() const;
+    uint32_t getMaxRayRecursionDepth() const;
+
 private:
     GPUCapabilities() = default;
 
     GPUVendor parseVendor(const std::string& renderer) const;
     void queryVRAM();
+    void queryVulkan();
 
 private:
     GPUCapabilitiesData m_Data;

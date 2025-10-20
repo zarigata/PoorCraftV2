@@ -211,6 +211,12 @@ public:
         static constexpr const char* FULLSCREEN_KEY = "Graphics.fullscreen";
         static constexpr const char* VSYNC_KEY = "Graphics.vsync";
         static constexpr const char* FOV_KEY = "Graphics.fov";
+        static constexpr const char* RENDERING_BACKEND_KEY = "Graphics.rendering_backend";
+        static constexpr const char* RT_RESOLUTION_SCALE_KEY = "Graphics.rt_resolution_scale";
+        static constexpr const char* RT_SAMPLES_PER_PIXEL_KEY = "Graphics.rt_samples_per_pixel";
+        static constexpr const char* RT_MAX_BOUNCES_KEY = "Graphics.rt_max_bounces";
+        static constexpr const char* RT_ENABLE_REFLECTIONS_KEY = "Graphics.rt_enable_reflections";
+        static constexpr const char* RT_ENABLE_SHADOWS_KEY = "Graphics.rt_enable_shadows";
 
         // Legacy constants for backward compatibility (deprecated)
         static constexpr const char* WIDTH = "width";

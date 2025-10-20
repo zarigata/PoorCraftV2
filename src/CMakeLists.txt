@@ -12,6 +12,7 @@ file(GLOB_RECURSE SOURCES
     "world/*.cpp"
     "ui/*.cpp"
     "modding/*.cpp"
+    "vulkan/*.cpp"
 )
 
 # Create executable target
@@ -37,6 +38,12 @@ target_link_libraries(PoorCraft
         imgui
         lua
 )
+
+# Link Vulkan if available
+if(Vulkan_FOUND)
+    target_link_libraries(PoorCraft PRIVATE Vulkan::Vulkan)
+    target_include_directories(PoorCraft PRIVATE ${Vulkan_INCLUDE_DIRS})
+endif()
 
 # Set include directories
 target_include_directories(PoorCraft
@@ -93,3 +100,30 @@ endif()
 
 # Enable C++17 features
 target_compile_features(PoorCraft PRIVATE cxx_std_17)
+
+# Compile GLSL shaders to SPIR-V if glslangValidator available
+if(GLSLANG_VALIDATOR)
+    file(GLOB_RECURSE GLSL_SHADERS
+        "${PROJECT_SOURCE_DIR}/shaders/*.vert"
+        "${PROJECT_SOURCE_DIR}/shaders/*.frag"
+        "${PROJECT_SOURCE_DIR}/shaders/*.rgen"  # Ray generation
+        "${PROJECT_SOURCE_DIR}/shaders/*.rchit" # Ray closest hit
+        "${PROJECT_SOURCE_DIR}/shaders/*.rmiss" # Ray miss
+    )
+    
+    foreach(GLSL_SHADER ${GLSL_SHADERS})
+        get_filename_component(SHADER_NAME ${GLSL_SHADER} NAME)
+        set(SPIRV_SHADER "${PROJECT_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
+        add_custom_command(
+            OUTPUT ${SPIRV_SHADER}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/shaders"
+            COMMAND ${GLSLANG_VALIDATOR} -V ${GLSL_SHADER} -o ${SPIRV_SHADER}
+            DEPENDS ${GLSL_SHADER}
+            COMMENT "Compiling ${SHADER_NAME} to SPIR-V"
+        )
+        list(APPEND SPIRV_SHADERS ${SPIRV_SHADER})
+    endforeach()
+    
+    add_custom_target(CompileShaders ALL DEPENDS ${SPIRV_SHADERS})
+    add_dependencies(PoorCraft CompileShaders)
+endif()

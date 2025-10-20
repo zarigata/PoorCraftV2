@@ -46,6 +46,15 @@ private:
     float m_TempMouseSensitivity = 1.0f;
     bool m_TempInvertY = false;
 
+    // Rendering backend settings
+    int m_TempRenderingBackend = 0;
+    bool m_TempEnableRayTracing = false;
+    float m_TempRTResolutionScale = 1.0f;
+    int m_TempRTSamplesPerPixel = 1;
+    int m_TempRTMaxBounces = 1;
+    bool m_TempRTEnableReflections = false;
+    bool m_TempRTEnableShadows = true;
+
     std::vector<std::pair<int, int>> m_Resolutions;
 };
 
