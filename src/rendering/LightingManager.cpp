@@ -18,6 +18,10 @@ void LightingManager::initialize() {
 }
 
 void LightingManager::updateLighting(Chunk& chunk) {
+    // Clear lighting arrays before propagation
+    chunk.fillSkyLight(0);
+    chunk.fillBlockLight(0);
+    
     propagateSkyLight(chunk, chunkManager);
     propagateBlockLight(chunk, chunkManager);
     chunk.setDirty(true);
@@ -190,74 +194,6 @@ void LightingManager::propagateBlockLight(Chunk& chunk, ChunkManager& chunkManag
             const uint8_t currentLight = targetChunk->getBlockLight(nx, ny, nz);
             if (newLevel > currentLight) {
                 targetChunk->setBlockLight(nx, ny, nz, newLevel);
-                lightQueue.push({nx, ny, nz, newLevel, targetCoord});
-            }
-        }
-    }
-}
-
-void LightingManager::floodFillLight(Chunk& chunk,
-                                     ChunkManager& chunkManager,
-                                     int32_t startX,
-                                     int32_t startY,
-                                     int32_t startZ,
-                                     uint8_t lightLevel,
-                                     bool isBlockLight) {
-    std::queue<LightNode> lightQueue;
-    lightQueue.push({startX, startY, startZ, lightLevel, chunk.getPosition()});
-
-    while (!lightQueue.empty()) {
-        LightNode node = lightQueue.front();
-        lightQueue.pop();
-
-        if (node.level <= 1) {
-            continue;
-        }
-
-        const uint8_t newLevel = node.level - 1;
-
-        // Check 6 neighbors
-        const int32_t neighbors[6][3] = {
-            {node.x + 1, node.y, node.z},
-            {node.x - 1, node.y, node.z},
-            {node.x, node.y + 1, node.z},
-            {node.x, node.y - 1, node.z},
-            {node.x, node.y, node.z + 1},
-            {node.x, node.y, node.z - 1}
-        };
-
-        for (const auto& neighbor : neighbors) {
-            int32_t nx = neighbor[0];
-            int32_t ny = neighbor[1];
-            int32_t nz = neighbor[2];
-
-            Chunk* targetChunk = &chunk;
-            ChunkCoord targetCoord = chunk.getPosition();
-
-            if (nx < 0 || nx >= Chunk::CHUNK_SIZE_X ||
-                nz < 0 || nz >= Chunk::CHUNK_SIZE_Z) {
-                continue;
-            }
-
-            if (ny < 0 || ny >= Chunk::CHUNK_SIZE_Y) {
-                continue;
-            }
-
-            const uint16_t blockId = targetChunk->getBlock(nx, ny, nz);
-            if (!shouldPropagate(blockId, isBlockLight)) {
-                continue;
-            }
-
-            const uint8_t currentLight = isBlockLight
-                                             ? targetChunk->getBlockLight(nx, ny, nz)
-                                             : targetChunk->getSkyLight(nx, ny, nz);
-
-            if (newLevel > currentLight) {
-                if (isBlockLight) {
-                    targetChunk->setBlockLight(nx, ny, nz, newLevel);
-                } else {
-                    targetChunk->setSkyLight(nx, ny, nz, newLevel);
-                }
                 lightQueue.push({nx, ny, nz, newLevel, targetCoord});
             }
         }

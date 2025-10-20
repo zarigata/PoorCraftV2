@@ -1,8 +1,11 @@
 #pragma once
 
 #include "poorcraft/rendering/Camera.h"
+#include "poorcraft/rendering/LightingManager.h"
 #include "poorcraft/rendering/Shader.h"
+#include "poorcraft/rendering/SkyRenderer.h"
 #include "poorcraft/rendering/TextureAtlas.h"
+#include "poorcraft/rendering/WaterRenderer.h"
 #include "poorcraft/world/BlockRegistry.h"
 #include "poorcraft/world/ChunkManager.h"
 #include "poorcraft/world/Frustum.h"
@@ -53,6 +56,9 @@ private:
 
     std::unique_ptr<ChunkManager> chunkManager;
     std::unique_ptr<TextureAtlas> textureAtlas;
+    std::unique_ptr<LightingManager> lightingManager;
+    std::unique_ptr<SkyRenderer> skyRenderer;
+    std::unique_ptr<WaterRenderer> waterRenderer;
 
     float timeOfDay;
     float dayNightCycleSpeed;

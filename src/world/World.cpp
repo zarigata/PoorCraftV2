@@ -3,9 +3,11 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
 
+#include "poorcraft/core/Config.h"
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/core/EventBus.h"
 #include "poorcraft/modding/ModEvents.h"
+#include "poorcraft/rendering/ParticleSystem.h"
 #include "poorcraft/resource/ResourceManager.h"
 
 namespace PoorCraft {
@@ -17,6 +19,7 @@ constexpr int DEFAULT_ATLAS_SIZE = 1024;
 } // namespace
 
 World::World() : chunkManager(std::make_unique<ChunkManager>()), textureAtlas(nullptr), 
+    lightingManager(nullptr), skyRenderer(nullptr), waterRenderer(nullptr), 
     timeOfDay(0.5f), dayNightCycleSpeed(1.0f), renderStats() {}
 
 World::~World() {
@@ -28,6 +31,17 @@ bool World::initialize(int renderDistance) {
 
     BlockRegistry::getInstance().initialize();
 
+    // Load rendering configuration
+    auto& config = poorcraft::Config::get_instance();
+    timeOfDay = config.get_float(poorcraft::Config::RenderingConfig::STARTING_TIME_KEY, 0.5f);
+    
+    const bool enableDayNight = config.get_bool(poorcraft::Config::RenderingConfig::ENABLE_DAY_NIGHT_CYCLE_KEY, true);
+    if (enableDayNight) {
+        dayNightCycleSpeed = config.get_float(poorcraft::Config::RenderingConfig::DAY_NIGHT_CYCLE_SPEED_KEY, 1.0f);
+    } else {
+        dayNightCycleSpeed = 0.0f; // Disable cycle
+    }
+
     textureAtlas = createBlockTextureAtlas();
     if (!textureAtlas) {
         PC_ERROR("Failed to create block texture atlas.");
@@ -37,12 +51,58 @@ bool World::initialize(int renderDistance) {
     chunkManager->initialize();
     chunkManager->setTextureAtlas(textureAtlas.get());
 
+    // Create and initialize LightingManager
+    lightingManager = std::make_unique<LightingManager>(*chunkManager);
+    lightingManager->initialize();
+    chunkManager->setLightingManager(lightingManager.get());
+
+    // Create and initialize SkyRenderer (if enabled)
+    const bool enableSky = config.get_bool(poorcraft::Config::RenderingConfig::ENABLE_SKY_KEY, true);
+    if (enableSky) {
+        skyRenderer = std::make_unique<SkyRenderer>();
+        if (!skyRenderer->initialize()) {
+            PC_WARN("Failed to initialize SkyRenderer, sky will not be rendered");
+            skyRenderer.reset();
+        }
+    }
+
+    // Create and initialize WaterRenderer
+    waterRenderer = std::make_unique<WaterRenderer>(*chunkManager, *textureAtlas);
+    if (!waterRenderer->initialize()) {
+        PC_WARN("Failed to initialize WaterRenderer, water will not be rendered");
+        waterRenderer.reset();
+    }
+
+    // Initialize ParticleSystem (if enabled)
+    const bool enableParticles = config.get_bool(poorcraft::Config::RenderingConfig::ENABLE_PARTICLES_KEY, true);
+    if (enableParticles) {
+        if (!ParticleSystem::getInstance().initialize()) {
+            PC_WARN("Failed to initialize ParticleSystem, particles will not be rendered");
+        }
+    }
+
     PC_INFO("World initialized with render distance " + std::to_string(renderDistance));
     return true;
 }
 
 void World::shutdown() {
     PC_INFO("Shutting down World...");
+
+    ParticleSystem::getInstance().shutdown();
+
+    if (waterRenderer) {
+        waterRenderer->shutdown();
+        waterRenderer.reset();
+    }
+
+    if (skyRenderer) {
+        skyRenderer->shutdown();
+        skyRenderer.reset();
+    }
+
+    if (lightingManager) {
+        lightingManager.reset();
+    }
 
     if (chunkManager) {
         chunkManager->shutdown();
@@ -63,13 +123,22 @@ void World::update(const glm::vec3& cameraPosition, int renderDistance, float de
         return;
     }
 
-    // Update time of day
-    timeOfDay += deltaTime * dayNightCycleSpeed / 1200.0f; // 1200 seconds = 20 minutes per day
-    if (timeOfDay > 1.0f) {
-        timeOfDay -= 1.0f;
+    // Update time of day (only if cycle is enabled)
+    if (dayNightCycleSpeed > 0.0f) {
+        timeOfDay += deltaTime * dayNightCycleSpeed / 1200.0f; // 1200 seconds = 20 minutes per day
+        if (timeOfDay > 1.0f) {
+            timeOfDay -= 1.0f;
+        }
     }
 
     chunkManager->update(cameraPosition, renderDistance);
+    
+    // Update particle system (if enabled)
+    auto& config = poorcraft::Config::get_instance();
+    const bool enableParticles = config.get_bool(poorcraft::Config::RenderingConfig::ENABLE_PARTICLES_KEY, true);
+    if (enableParticles) {
+        ParticleSystem::getInstance().update(deltaTime);
+    }
 }
 
 void World::render(const Camera& camera, Shader& shader) {
@@ -83,13 +152,23 @@ void World::render(const Camera& camera, Shader& shader) {
     const glm::mat4 viewProjection = camera.getViewProjectionMatrix();
     Frustum frustum(viewProjection);
 
+    // === PASS 1: Render Sky ===
+    if (skyRenderer) {
+        skyRenderer->render(camera, timeOfDay);
+    }
+
+    // === PASS 2: Render Opaque Chunks ===
+    shader.use();
     shader.setMat4("view", camera.getViewMatrix());
     shader.setMat4("projection", camera.getProjectionMatrix());
 
     // Set lighting uniforms
+    auto& config = poorcraft::Config::get_instance();
+    const float ambientLevel = config.get_float(poorcraft::Config::RenderingConfig::AMBIENT_LIGHT_LEVEL_KEY, 0.3f);
+    
     shader.setVec3("sunDirection", getSunDirection());
     shader.setVec3("sunColor", getSunColor());
-    shader.setFloat("ambientStrength", 0.3f);
+    shader.setFloat("ambientStrength", ambientLevel);
 
     auto atlasTexture = textureAtlas->getTexture();
     if (atlasTexture) {
@@ -130,6 +209,17 @@ void World::render(const Camera& camera, Shader& shader) {
 
         renderStats.chunksRendered += 1;
         renderStats.verticesRendered += meshPtr->getVertexCount();
+    }
+
+    // === PASS 3: Render Water ===
+    if (waterRenderer) {
+        waterRenderer->render(camera, timeOfDay, getSunDirection(), getSunColor(), ambientLevel);
+    }
+
+    // === PASS 4: Render Particles ===
+    const bool enableParticles = config.get_bool(poorcraft::Config::RenderingConfig::ENABLE_PARTICLES_KEY, true);
+    if (enableParticles) {
+        ParticleSystem::getInstance().render(camera);
     }
 }
 
@@ -225,6 +315,26 @@ bool World::setBlockAt(int32_t worldX, int32_t worldY, int32_t worldZ, uint16_t 
     
     // Set the block
     chunk->setBlock(localX, worldY, localZ, blockId);
+    
+    // Update lighting for the affected chunk and neighbors
+    if (lightingManager) {
+        lightingManager->updateChunkLighting(coord);
+        // Also update neighbors if on chunk boundary
+        if (localX == 0 || localX == Chunk::CHUNK_SIZE_X - 1 ||
+            localZ == 0 || localZ == Chunk::CHUNK_SIZE_Z - 1) {
+            const ChunkCoord neighbors[4] = {
+                {coord.x + 1, coord.z},
+                {coord.x - 1, coord.z},
+                {coord.x, coord.z + 1},
+                {coord.x, coord.z - 1}
+            };
+            for (const auto& neighborCoord : neighbors) {
+                if (chunkManager->hasChunk(neighborCoord)) {
+                    lightingManager->updateChunkLighting(neighborCoord);
+                }
+            }
+        }
+    }
     
     // Publish appropriate event
     if (blockId != 0 && previousBlockId == 0) {

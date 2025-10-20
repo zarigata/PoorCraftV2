@@ -52,6 +52,12 @@ public:
     [[nodiscard]] std::shared_ptr<VertexArray> getVAO() const;
     [[nodiscard]] const ChunkCoord& getPosition() const;
 
+    // Water sub-mesh accessors
+    [[nodiscard]] bool hasWater() const;
+    [[nodiscard]] std::size_t getWaterVertexCount() const;
+    [[nodiscard]] std::size_t getWaterIndexCount() const;
+    [[nodiscard]] std::shared_ptr<VertexArray> getWaterVAO() const;
+
 private:
     void greedyMeshFace(Chunk& chunk,
                         ChunkManager& manager,
@@ -80,7 +86,9 @@ private:
                               int32_t x,
                               int32_t y,
                               int32_t z,
-                              const glm::vec3& normal) const;
+                              const glm::vec3& normal,
+                              int uSign,
+                              int vSign) const;
 
     static uint8_t packLight(uint8_t skyLight, uint8_t blockLight);
 
@@ -97,6 +105,11 @@ private:
     std::vector<BlockVertex> vertices;
     std::vector<uint32_t> indices;
     std::shared_ptr<VertexArray> vao;
+
+    // Water sub-mesh
+    std::vector<BlockVertex> waterVertices;
+    std::vector<uint32_t> waterIndices;
+    std::shared_ptr<VertexArray> waterVAO;
 };
 
 } // namespace PoorCraft

@@ -1,6 +1,9 @@
 #include "poorcraft/rendering/ParticleSystem.h"
 
+#include "poorcraft/core/Config.h"
+#include "poorcraft/core/EventBus.h"
 #include "poorcraft/core/Logger.h"
+#include "poorcraft/modding/ModEvents.h"
 #include "poorcraft/resource/ResourceManager.h"
 #include "poorcraft/world/BlockRegistry.h"
 
@@ -17,10 +20,16 @@ ParticleSystem& ParticleSystem::getInstance() {
 
 ParticleSystem::ParticleSystem()
     : particles(), emitters(), particleShader(nullptr), particleVAO(nullptr),
-      particleAtlas(nullptr), maxParticles(10000) {}
+      particleAtlas(nullptr), maxParticles(10000), blockBreakEventListenerId(0), instanceVBO(0) {}
 
 bool ParticleSystem::initialize() {
     PC_INFO("Initializing ParticleSystem...");
+
+    // Read config
+    auto& config = poorcraft::Config::get_instance();
+    maxParticles = static_cast<size_t>(config.get_int(poorcraft::Config::RenderingConfig::MAX_PARTICLES_KEY, 10000));
+    particles.reserve(maxParticles);
+    instanceBuffer.reserve(maxParticles);
 
     auto& resourceManager = ResourceManager::getInstance();
     particleShader = resourceManager.loadShader("particle", 
@@ -31,15 +40,110 @@ bool ParticleSystem::initialize() {
         return false;
     }
 
-    particles.reserve(maxParticles);
+    // Load particle atlas
+    particleAtlas = std::make_shared<TextureAtlas>(256, TextureFormat::RGBA);
+    const std::string particlePath = resourceManager.resolvePath("assets/textures/particles/");
+    
+    // Try to load a default particle texture (fallback to white if missing)
+    if (!particleAtlas->addTextureFromFile("default", particlePath + "default.png")) {
+        PC_WARN("No particle textures found, using fallback");
+    }
+    
+    if (!particleAtlas->build()) {
+        PC_WARN("Failed to build particle atlas, particles may not render correctly");
+    }
+
+    // Create quad VAO for particle billboards with instancing
+    particleVAO = std::make_shared<VertexArray>();
+    if (!particleVAO->create()) {
+        PC_ERROR("Failed to create particle VAO");
+        return false;
+    }
+
+    // Quad vertices (position and UV)
+    const float quadVertices[] = {
+        // pos      // uv
+        -0.5f, -0.5f, 0.0f, 0.0f,
+         0.5f, -0.5f, 1.0f, 0.0f,
+         0.5f,  0.5f, 1.0f, 1.0f,
+        -0.5f,  0.5f, 0.0f, 1.0f
+    };
+
+    const uint32_t quadIndices[] = {
+        0, 1, 2,
+        2, 3, 0
+    };
+
+    particleVAO->bind();
+
+    // Per-vertex attributes (quad geometry)
+    const std::vector<VertexAttribute> vertexAttributes = {
+        {0, 2, VertexAttributeType::FLOAT, false, 4 * sizeof(float), 0},
+        {1, 2, VertexAttributeType::FLOAT, false, 4 * sizeof(float), 2 * sizeof(float)}
+    };
+
+    particleVAO->addVertexBuffer(quadVertices, sizeof(quadVertices), vertexAttributes, BufferUsage::STATIC_DRAW);
+    particleVAO->setIndexBuffer(quadIndices, 6, BufferUsage::STATIC_DRAW);
+
+    // Create instance buffer (will be updated each frame)
+    // Reserve space for instance attributes but don't upload data yet
+    glGenBuffers(1, &instanceVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+    glBufferData(GL_ARRAY_BUFFER, maxParticles * sizeof(InstanceData), nullptr, GL_DYNAMIC_DRAW);
+
+    // Instance attributes (per-particle data)
+    // Position (vec3)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(InstanceData), (void*)offsetof(InstanceData, position));
+    glVertexAttribDivisor(2, 1);
+
+    // Color (vec4)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceData), (void*)offsetof(InstanceData, color));
+    glVertexAttribDivisor(3, 1);
+
+    // Size (float)
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(InstanceData), (void*)offsetof(InstanceData, size));
+    glVertexAttribDivisor(4, 1);
+
+    // Rotation (float)
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(InstanceData), (void*)offsetof(InstanceData, rotation));
+    glVertexAttribDivisor(5, 1);
+
+    VertexArray::unbind();
+
+    // Register event listener for block break
+    auto& eventBus = EventBus::getInstance();
+    blockBreakEventListenerId = eventBus.subscribe<BlockBrokenEvent>(
+        [this](const BlockBrokenEvent& event) {
+            const glm::vec3 pos(static_cast<float>(event.getX()) + 0.5f,
+                               static_cast<float>(event.getY()) + 0.5f,
+                               static_cast<float>(event.getZ()) + 0.5f);
+            spawnBlockBreakParticles(event.getBlockId(), pos);
+        }
+    );
 
     PC_INFO("ParticleSystem initialized");
     return true;
 }
 
 void ParticleSystem::shutdown() {
+    // Unregister event listener
+    if (blockBreakEventListenerId != 0) {
+        EventBus::getInstance().unsubscribe(blockBreakEventListenerId);
+        blockBreakEventListenerId = 0;
+    }
+
     particles.clear();
     emitters.clear();
+    instanceBuffer.clear();
+
+    if (instanceVBO != 0) {
+        glDeleteBuffers(1, &instanceVBO);
+        instanceVBO = 0;
+    }
 
     if (particleShader) {
         particleShader.reset();
@@ -86,11 +190,26 @@ void ParticleSystem::update(float deltaTime) {
 }
 
 void ParticleSystem::render(const Camera& camera) {
-    if (particles.empty() || !particleShader) {
+    if (particles.empty() || !particleShader || !particleVAO) {
         return;
     }
 
     sortParticlesByDepth(camera.getPosition());
+
+    // Build instance buffer
+    instanceBuffer.clear();
+    for (const auto& particle : particles) {
+        InstanceData instance;
+        instance.position = particle.position;
+        instance.color = particle.color;
+        instance.size = particle.size;
+        instance.rotation = particle.rotation;
+        instanceBuffer.push_back(instance);
+    }
+
+    if (instanceBuffer.empty()) {
+        return;
+    }
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -102,7 +221,25 @@ void ParticleSystem::render(const Camera& camera) {
     particleShader->setVec3("cameraRight", camera.getRight());
     particleShader->setVec3("cameraUp", camera.getUp());
 
-    // Render particles (simplified - actual implementation would use instanced rendering)
+    // Bind particle atlas if available
+    if (particleAtlas) {
+        auto atlasTexture = particleAtlas->getTexture();
+        if (atlasTexture) {
+            atlasTexture->bind(0);
+            particleShader->setInt("particleAtlas", 0);
+        }
+    }
+
+    particleVAO->bind();
+
+    // Update instance buffer
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, instanceBuffer.size() * sizeof(InstanceData), instanceBuffer.data());
+
+    // Draw all particles with one instanced call
+    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, static_cast<GLsizei>(instanceBuffer.size()));
+
+    VertexArray::unbind();
 
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);

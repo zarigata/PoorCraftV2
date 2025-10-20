@@ -78,6 +78,17 @@ private:
     std::shared_ptr<VertexArray> particleVAO;
     std::shared_ptr<TextureAtlas> particleAtlas;
     size_t maxParticles;
+    size_t blockBreakEventListenerId;
+    unsigned int instanceVBO;
+
+    // Instance data buffer
+    struct InstanceData {
+        glm::vec3 position;
+        glm::vec4 color;
+        float size;
+        float rotation;
+    };
+    std::vector<InstanceData> instanceBuffer;
 };
 
 } // namespace PoorCraft

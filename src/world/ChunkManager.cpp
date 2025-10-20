@@ -7,6 +7,7 @@
 #include "poorcraft/core/EventBus.h"
 #include "poorcraft/core/Logger.h"
 #include "poorcraft/modding/ModEvents.h"
+#include "poorcraft/rendering/LightingManager.h"
 #include "poorcraft/world/BlockRegistry.h"
 #include "poorcraft/world/TerrainGenerator.h"
 
@@ -21,7 +22,7 @@ constexpr int DEFAULT_UNLOAD_MARGIN = 2;
 } // namespace
 
 ChunkManager::ChunkManager()
-    : atlas(nullptr), chunks(), meshes(), generationQueue(), meshQueue(), generationQueueSet(), meshQueueSet(),
+    : atlas(nullptr), lightingManager(nullptr), chunks(), meshes(), generationQueue(), meshQueue(), generationQueueSet(), meshQueueSet(),
       lastCameraChunk(0, 0),
       chunksToGeneratePerFrame(DEFAULT_GENERATE_PER_FRAME), chunksToMeshPerFrame(DEFAULT_MESH_PER_FRAME),
       unloadMargin(DEFAULT_UNLOAD_MARGIN) {}
@@ -191,6 +192,10 @@ void ChunkManager::setTextureAtlas(TextureAtlas* atlasPtr) {
     atlas = atlasPtr;
 }
 
+void ChunkManager::setLightingManager(LightingManager* lightingMgr) {
+    lightingManager = lightingMgr;
+}
+
 const std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash>& ChunkManager::getChunks() const {
     return chunks;
 }
@@ -210,6 +215,12 @@ void ChunkManager::generateChunk(const ChunkCoord& coord) {
 
     chunks.emplace(coord, std::move(chunk));
     PC_DEBUG("Generated chunk " + coord.toString());
+    
+    // Update lighting for the newly generated chunk
+    if (lightingManager) {
+        lightingManager->updateChunkLighting(coord);
+    }
+    
     enqueueMesh(coord);
     markNeighborChunksDirty(coord);
     

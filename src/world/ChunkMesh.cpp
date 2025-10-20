@@ -25,7 +25,10 @@ bool ChunkMesh::generate(Chunk& chunk, ChunkManager& manager, TextureAtlas& atla
 
     vertices.reserve(4096);
     indices.reserve(6144);
+    waterVertices.reserve(1024);
+    waterIndices.reserve(1536);
 
+    // Generate opaque and transparent (non-water) meshes
     for (MeshFaceDirection face : {MeshFaceDirection::POS_X,
                                    MeshFaceDirection::NEG_X,
                                    MeshFaceDirection::POS_Y,
@@ -35,35 +38,62 @@ bool ChunkMesh::generate(Chunk& chunk, ChunkManager& manager, TextureAtlas& atla
         greedyMeshFace(chunk, manager, atlas, face);
     }
 
-    if (vertices.empty()) {
-        return true;
+    // Create opaque mesh VAO if not empty
+    if (!vertices.empty()) {
+        vao = std::make_shared<VertexArray>();
+        if (!vao->create()) {
+            PC_ERROR("Failed to create vertex array for chunk mesh at " + chunkPosition.toString());
+            clear();
+            return false;
+        }
+
+        vao->bind();
+
+        const std::vector<VertexAttribute> attributes = {
+            {0, 3, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, position)},
+            {1, 3, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, normal)},
+            {2, 2, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, uv)},
+            {3, 1, VertexAttributeType::UBYTE, false, sizeof(BlockVertex), offsetof(BlockVertex, light)},
+            {4, 1, VertexAttributeType::UBYTE, false, sizeof(BlockVertex), offsetof(BlockVertex, ao)},
+        };
+
+        vao->addVertexBuffer(vertices.data(), vertices.size() * sizeof(BlockVertex), attributes, BufferUsage::STATIC_DRAW);
+        vao->setIndexBuffer(indices.data(), indices.size(), BufferUsage::STATIC_DRAW);
+
+        VertexArray::unbind();
     }
 
-    vao = std::make_shared<VertexArray>();
-    if (!vao->create()) {
-        PC_ERROR("Failed to create vertex array for chunk mesh at " + chunkPosition.toString());
-        clear();
-        return false;
+    // Create water mesh VAO if not empty
+    if (!waterVertices.empty()) {
+        waterVAO = std::make_shared<VertexArray>();
+        if (!waterVAO->create()) {
+            PC_ERROR("Failed to create water vertex array for chunk mesh at " + chunkPosition.toString());
+            // Don't fail entirely, just skip water
+            waterVertices.clear();
+            waterIndices.clear();
+        } else {
+            waterVAO->bind();
+
+            const std::vector<VertexAttribute> attributes = {
+                {0, 3, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, position)},
+                {1, 3, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, normal)},
+                {2, 2, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, uv)},
+                {3, 1, VertexAttributeType::UBYTE, false, sizeof(BlockVertex), offsetof(BlockVertex, light)},
+                {4, 1, VertexAttributeType::UBYTE, false, sizeof(BlockVertex), offsetof(BlockVertex, ao)},
+            };
+
+            waterVAO->addVertexBuffer(waterVertices.data(), waterVertices.size() * sizeof(BlockVertex), attributes, BufferUsage::STATIC_DRAW);
+            waterVAO->setIndexBuffer(waterIndices.data(), waterIndices.size(), BufferUsage::STATIC_DRAW);
+
+            VertexArray::unbind();
+        }
     }
-
-    vao->bind();
-
-    const std::vector<VertexAttribute> attributes = {
-        {0, 3, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, position)},
-        {1, 3, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, normal)},
-        {2, 2, VertexAttributeType::FLOAT, false, sizeof(BlockVertex), offsetof(BlockVertex, uv)},
-        {3, 1, VertexAttributeType::UBYTE, false, sizeof(BlockVertex), offsetof(BlockVertex, light)},
-        {4, 1, VertexAttributeType::UBYTE, false, sizeof(BlockVertex), offsetof(BlockVertex, ao)},
-    };
-
-    vao->addVertexBuffer(vertices.data(), vertices.size() * sizeof(BlockVertex), attributes, BufferUsage::STATIC_DRAW);
-    vao->setIndexBuffer(indices.data(), indices.size(), BufferUsage::STATIC_DRAW);
-
-    VertexArray::unbind();
 
     PC_DEBUG("Generated chunk mesh at " + chunkPosition.toString() +
              " | Vertices: " + std::to_string(vertices.size()) +
-             " | Indices: " + std::to_string(indices.size()));
+             " | Indices: " + std::to_string(indices.size()) +
+             " | Water Vertices: " + std::to_string(waterVertices.size()) +
+             " | Water Indices: " + std::to_string(waterIndices.size()));
 
     return true;
 }
@@ -71,10 +101,17 @@ bool ChunkMesh::generate(Chunk& chunk, ChunkManager& manager, TextureAtlas& atla
 void ChunkMesh::clear() {
     vertices.clear();
     indices.clear();
+    waterVertices.clear();
+    waterIndices.clear();
 
     if (vao) {
         vao->destroy();
         vao.reset();
+    }
+
+    if (waterVAO) {
+        waterVAO->destroy();
+        waterVAO.reset();
     }
 }
 
@@ -96,6 +133,22 @@ std::shared_ptr<VertexArray> ChunkMesh::getVAO() const {
 
 const ChunkCoord& ChunkMesh::getPosition() const {
     return chunkPosition;
+}
+
+bool ChunkMesh::hasWater() const {
+    return !waterVertices.empty();
+}
+
+std::size_t ChunkMesh::getWaterVertexCount() const {
+    return waterVertices.size();
+}
+
+std::size_t ChunkMesh::getWaterIndexCount() const {
+    return waterIndices.size();
+}
+
+std::shared_ptr<VertexArray> ChunkMesh::getWaterVAO() const {
+    return waterVAO;
 }
 
 void ChunkMesh::greedyMeshFace(Chunk& chunk,
@@ -200,51 +253,63 @@ void ChunkMesh::greedyMeshFace(Chunk& chunk,
                 const auto uvs = getBlockUVs(atlas, blockId, face);
                 const glm::vec3 normal = getNormal(face);
 
-                const uint32_t baseIndex = static_cast<uint32_t>(vertices.size());
+                // Check if this block is water/liquid - route to water sub-mesh
+                const auto& registry = BlockRegistry::getInstance();
+                const BlockType& block = registry.getBlock(blockId);
+                const bool isWater = block.isLiquid;
+
+                // Select target vertex/index arrays
+                auto& targetVertices = isWater ? waterVertices : vertices;
+                auto& targetIndices = isWater ? waterIndices : indices;
+                const uint32_t baseIndex = static_cast<uint32_t>(targetVertices.size());
 
                 // Calculate light and AO for each vertex
+                // Determine corner signs based on U and V directions
+                const int uSignPos = (uDir[uAxis] > 0.0f) ? 1 : -1;
+                const int vSignPos = (vDir[vAxis] > 0.0f) ? 1 : -1;
+
                 const uint8_t light0 = calculateVertexLight(chunk, manager, 
                     static_cast<int32_t>(base.x), static_cast<int32_t>(base.y), static_cast<int32_t>(base.z));
                 const uint8_t ao0 = calculateVertexAO(chunk, manager,
-                    static_cast<int32_t>(base.x), static_cast<int32_t>(base.y), static_cast<int32_t>(base.z), normal);
+                    static_cast<int32_t>(base.x), static_cast<int32_t>(base.y), static_cast<int32_t>(base.z), normal, -uSignPos, -vSignPos);
 
                 const glm::vec3 pos1 = base + uVec;
                 const uint8_t light1 = calculateVertexLight(chunk, manager,
                     static_cast<int32_t>(pos1.x), static_cast<int32_t>(pos1.y), static_cast<int32_t>(pos1.z));
                 const uint8_t ao1 = calculateVertexAO(chunk, manager,
-                    static_cast<int32_t>(pos1.x), static_cast<int32_t>(pos1.y), static_cast<int32_t>(pos1.z), normal);
+                    static_cast<int32_t>(pos1.x), static_cast<int32_t>(pos1.y), static_cast<int32_t>(pos1.z), normal, uSignPos, -vSignPos);
 
                 const glm::vec3 pos2 = base + vVec;
                 const uint8_t light2 = calculateVertexLight(chunk, manager,
                     static_cast<int32_t>(pos2.x), static_cast<int32_t>(pos2.y), static_cast<int32_t>(pos2.z));
                 const uint8_t ao2 = calculateVertexAO(chunk, manager,
-                    static_cast<int32_t>(pos2.x), static_cast<int32_t>(pos2.y), static_cast<int32_t>(pos2.z), normal);
+                    static_cast<int32_t>(pos2.x), static_cast<int32_t>(pos2.y), static_cast<int32_t>(pos2.z), normal, -uSignPos, vSignPos);
 
                 const glm::vec3 pos3 = base + uVec + vVec;
                 const uint8_t light3 = calculateVertexLight(chunk, manager,
                     static_cast<int32_t>(pos3.x), static_cast<int32_t>(pos3.y), static_cast<int32_t>(pos3.z));
                 const uint8_t ao3 = calculateVertexAO(chunk, manager,
-                    static_cast<int32_t>(pos3.x), static_cast<int32_t>(pos3.y), static_cast<int32_t>(pos3.z), normal);
+                    static_cast<int32_t>(pos3.x), static_cast<int32_t>(pos3.y), static_cast<int32_t>(pos3.z), normal, uSignPos, vSignPos);
 
-                vertices.push_back({base, normal, uvs[0], light0, ao0});
-                vertices.push_back({base + uVec, normal, uvs[1], light1, ao1});
-                vertices.push_back({base + vVec, normal, uvs[2], light2, ao2});
-                vertices.push_back({base + uVec + vVec, normal, uvs[3], light3, ao3});
+                targetVertices.push_back({base, normal, uvs[0], light0, ao0});
+                targetVertices.push_back({base + uVec, normal, uvs[1], light1, ao1});
+                targetVertices.push_back({base + vVec, normal, uvs[2], light2, ao2});
+                targetVertices.push_back({base + uVec + vVec, normal, uvs[3], light3, ao3});
 
                 if (positive) {
-                    indices.push_back(baseIndex + 0);
-                    indices.push_back(baseIndex + 1);
-                    indices.push_back(baseIndex + 2);
-                    indices.push_back(baseIndex + 2);
-                    indices.push_back(baseIndex + 1);
-                    indices.push_back(baseIndex + 3);
+                    targetIndices.push_back(baseIndex + 0);
+                    targetIndices.push_back(baseIndex + 1);
+                    targetIndices.push_back(baseIndex + 2);
+                    targetIndices.push_back(baseIndex + 2);
+                    targetIndices.push_back(baseIndex + 1);
+                    targetIndices.push_back(baseIndex + 3);
                 } else {
-                    indices.push_back(baseIndex + 0);
-                    indices.push_back(baseIndex + 2);
-                    indices.push_back(baseIndex + 1);
-                    indices.push_back(baseIndex + 2);
-                    indices.push_back(baseIndex + 3);
-                    indices.push_back(baseIndex + 1);
+                    targetIndices.push_back(baseIndex + 0);
+                    targetIndices.push_back(baseIndex + 2);
+                    targetIndices.push_back(baseIndex + 1);
+                    targetIndices.push_back(baseIndex + 2);
+                    targetIndices.push_back(baseIndex + 3);
+                    targetIndices.push_back(baseIndex + 1);
                 }
 
                 u += width;
@@ -504,9 +569,47 @@ uint8_t ChunkMesh::calculateVertexLight(const Chunk& chunk,
         blockLight = chunk.getBlockLight(x, y, z);
     } else {
         // Query neighbor chunk
-        const uint16_t blockId = getBlockFromNeighbors(chunk, manager, x, y, z);
-        if (blockId == 0) {
-            skyLight = 15; // Assume full sky light outside loaded chunks
+        if (y >= 0 && y < Chunk::CHUNK_SIZE_Y) {
+            ChunkCoord neighborCoord = chunk.getPosition();
+            int localX = x;
+            int localZ = z;
+
+            if (localX < 0) {
+                neighborCoord.x -= 1;
+                localX += Chunk::CHUNK_SIZE_X;
+            } else if (localX >= Chunk::CHUNK_SIZE_X) {
+                neighborCoord.x += 1;
+                localX -= Chunk::CHUNK_SIZE_X;
+            }
+
+            if (localZ < 0) {
+                neighborCoord.z -= 1;
+                localZ += Chunk::CHUNK_SIZE_Z;
+            } else if (localZ >= Chunk::CHUNK_SIZE_Z) {
+                neighborCoord.z += 1;
+                localZ -= Chunk::CHUNK_SIZE_Z;
+            }
+
+            const Chunk* neighbor = manager.getChunk(neighborCoord);
+            if (neighbor) {
+                skyLight = neighbor->getSkyLight(localX, y, localZ);
+                blockLight = neighbor->getBlockLight(localX, y, localZ);
+            } else {
+                // If neighbor is missing, default to 0 (except above world top)
+                if (y >= Chunk::CHUNK_SIZE_Y) {
+                    skyLight = 15; // Above world, full skylight
+                } else {
+                    skyLight = 0; // Missing chunk, no light
+                }
+                blockLight = 0;
+            }
+        } else {
+            // Outside Y bounds
+            if (y >= Chunk::CHUNK_SIZE_Y) {
+                skyLight = 15; // Above world
+            } else {
+                skyLight = 0; // Below world
+            }
             blockLight = 0;
         }
     }
@@ -519,53 +622,49 @@ uint8_t ChunkMesh::calculateVertexAO(const Chunk& chunk,
                                      int32_t x,
                                      int32_t y,
                                      int32_t z,
-                                     const glm::vec3& normal) const {
-    // Determine which 3 blocks to check based on face normal
-    int32_t side1[3] = {x, y, z};
-    int32_t side2[3] = {x, y, z};
-    int32_t corner[3] = {x, y, z};
-
-    // Adjust positions based on normal direction
-    if (std::abs(normal.x) > 0.5f) {
-        // X-facing
-        side1[1] += (normal.x > 0) ? 1 : -1;
-        side2[2] += (normal.x > 0) ? 1 : -1;
-        corner[1] += (normal.x > 0) ? 1 : -1;
-        corner[2] += (normal.x > 0) ? 1 : -1;
-    } else if (std::abs(normal.y) > 0.5f) {
-        // Y-facing
-        side1[0] += (normal.y > 0) ? 1 : -1;
-        side2[2] += (normal.y > 0) ? 1 : -1;
-        corner[0] += (normal.y > 0) ? 1 : -1;
-        corner[2] += (normal.y > 0) ? 1 : -1;
-    } else {
-        // Z-facing
-        side1[0] += (normal.z > 0) ? 1 : -1;
-        side2[1] += (normal.z > 0) ? 1 : -1;
-        corner[0] += (normal.z > 0) ? 1 : -1;
-        corner[1] += (normal.z > 0) ? 1 : -1;
+                                     const glm::vec3& normal,
+                                     int uSign,
+                                     int vSign) const {
+    // Determine the two orthogonal directions along the face plane based on normal
+    glm::ivec3 uDir(0), vDir(0);
+    
+    if (normal.x > 0.5f || normal.x < -0.5f) {
+        // X face: U=Z, V=Y
+        uDir = glm::ivec3(0, 0, uSign);
+        vDir = glm::ivec3(0, vSign, 0);
+    } else if (normal.y > 0.5f || normal.y < -0.5f) {
+        // Y face: U=X, V=Z
+        uDir = glm::ivec3(uSign, 0, 0);
+        vDir = glm::ivec3(0, 0, vSign);
+    } else if (normal.z > 0.5f || normal.z < -0.5f) {
+        // Z face: U=X, V=Y
+        uDir = glm::ivec3(uSign, 0, 0);
+        vDir = glm::ivec3(0, vSign, 0);
     }
+    
+    const glm::ivec3 corner = uDir + vDir;
 
-    // Count opaque blocks
+    // Count opaque blocks at the three neighbor positions
     uint8_t aoCount = 0;
     const auto& registry = BlockRegistry::getInstance();
 
-    const uint16_t side1Block = getBlockFromNeighbors(chunk, manager, side1[0], side1[1], side1[2]);
+    const uint16_t side1Block = getBlockFromNeighbors(chunk, manager, x + uDir.x, y + uDir.y, z + uDir.z);
     if (side1Block != 0 && registry.getBlock(side1Block).isOpaque) {
         ++aoCount;
     }
 
-    const uint16_t side2Block = getBlockFromNeighbors(chunk, manager, side2[0], side2[1], side2[2]);
+    const uint16_t side2Block = getBlockFromNeighbors(chunk, manager, x + vDir.x, y + vDir.y, z + vDir.z);
     if (side2Block != 0 && registry.getBlock(side2Block).isOpaque) {
         ++aoCount;
     }
 
-    const uint16_t cornerBlock = getBlockFromNeighbors(chunk, manager, corner[0], corner[1], corner[2]);
+    const uint16_t cornerBlock = getBlockFromNeighbors(chunk, manager, x + corner.x, y + corner.y, z + corner.z);
     if (cornerBlock != 0 && registry.getBlock(cornerBlock).isOpaque) {
         ++aoCount;
     }
 
-    return aoCount;
+    // Clamp result 0-3
+    return std::min(aoCount, static_cast<uint8_t>(3));
 }
 
 uint8_t ChunkMesh::packLight(uint8_t skyLight, uint8_t blockLight) {

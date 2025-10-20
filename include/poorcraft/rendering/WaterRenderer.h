@@ -25,7 +25,8 @@ public:
 
     bool initialize();
     void shutdown();
-    void render(const Camera& camera, float time);
+    void render(const Camera& camera, float time, const glm::vec3& sunDirection, 
+                const glm::vec3& sunColor, float ambientStrength);
 
 private:
     void sortWaterChunksByDepth(std::vector<ChunkCoord>& chunks, const glm::vec3& cameraPos);
@@ -34,6 +35,7 @@ private:
     TextureAtlas& textureAtlas;
     std::shared_ptr<Shader> waterShader;
     glm::vec4 waterColor;
+    float waveSpeed;
 };
 
 } // namespace PoorCraft

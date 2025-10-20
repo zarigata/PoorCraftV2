@@ -33,14 +33,6 @@ private:
         ChunkCoord chunkCoord;
     };
 
-    void floodFillLight(Chunk& chunk,
-                        ChunkManager& chunkManager,
-                        int32_t startX,
-                        int32_t startY,
-                        int32_t startZ,
-                        uint8_t lightLevel,
-                        bool isBlockLight);
-
     bool shouldPropagate(uint16_t blockId, bool isBlockLight) const;
 
     ChunkManager& chunkManager;

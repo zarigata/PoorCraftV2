@@ -5,6 +5,11 @@
 #include "poorcraft/world/ChunkCoord.h"
 #include "poorcraft/world/ChunkMesh.h"
 
+// Forward declaration
+namespace PoorCraft {
+    class LightingManager;
+}
+
 #include <glm/vec3.hpp>
 
 #include <memory>
@@ -16,6 +21,7 @@
 namespace PoorCraft {
 
 class TerrainGenerator;
+class LightingManager;
 
 class ChunkManager {
 public:
@@ -38,6 +44,7 @@ public:
     ChunkMesh* getChunkMesh(const ChunkCoord& coord) const;
 
     void setTextureAtlas(TextureAtlas* atlasPtr);
+    void setLightingManager(LightingManager* lightingMgr);
 
     [[nodiscard]] const std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash>& getChunks() const;
     [[nodiscard]] const std::unordered_map<ChunkCoord, std::unique_ptr<ChunkMesh>, ChunkCoordHash>& getMeshes() const;
@@ -54,6 +61,7 @@ private:
     void markNeighborChunksDirty(const ChunkCoord& coord);
 
     TextureAtlas* atlas;
+    LightingManager* lightingManager;
 
     std::unordered_map<ChunkCoord, std::unique_ptr<Chunk>, ChunkCoordHash> chunks;
     std::unordered_map<ChunkCoord, std::unique_ptr<ChunkMesh>, ChunkCoordHash> meshes;

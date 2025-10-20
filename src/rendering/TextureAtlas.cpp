@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 
+#include "poorcraft/core/Config.h"
 #include "poorcraft/core/Logger.h"
 
 #include "stb_image.h"
@@ -98,10 +99,20 @@ bool TextureAtlas::build() {
     
     // Enable anisotropic filtering if supported
     if (GLAD_GL_EXT_texture_filter_anisotropic) {
-        GLfloat maxAniso = 0.0f;
-        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAniso);
-        PC_DEBUGF("Texture atlas anisotropic filtering enabled: %.1fx", maxAniso);
+        auto& config = poorcraft::Config::get_instance();
+        const bool enableAniso = config.get_bool(poorcraft::Config::RenderingConfig::ENABLE_ANISOTROPIC_FILTERING_KEY, true);
+        
+        if (enableAniso) {
+            GLfloat maxAniso = 0.0f;
+            glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
+            
+            // Clamp to config value
+            const float configMaxAniso = config.get_float(poorcraft::Config::RenderingConfig::MAX_ANISOTROPY_KEY, 16.0f);
+            maxAniso = std::min(maxAniso, configMaxAniso);
+            
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAniso);
+            PC_DEBUGF("Texture atlas anisotropic filtering enabled: %.1fx", maxAniso);
+        }
     }
     
     Texture::unbind();

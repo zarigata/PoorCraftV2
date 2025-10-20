@@ -7,7 +7,7 @@ namespace PoorCraft {
 Chunk::Chunk(const ChunkCoord& chunkPosition)
     : position(chunkPosition), blocks(), skyLight(), blockLight(), dirty(true), blockCount(0) {
     blocks.fill(0);
-    skyLight.fill(15);  // Initialize with full sunlight
+    skyLight.fill(0);   // Initialize with no light, propagation will set it
     blockLight.fill(0); // Initialize with no emissive light
 }
 
