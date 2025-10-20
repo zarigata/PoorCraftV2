@@ -46,8 +46,12 @@ public:
     uint32_t getSwapchainImageCount() const { return static_cast<uint32_t>(m_SwapchainImages.size()); }
     VkFormat getSwapchainFormat() const { return m_SwapchainImageFormat; }
     VkExtent2D getSwapchainExtent() const { return m_SwapchainExtent; }
+    VkImageView getSwapchainImageView(uint32_t index) const { return m_SwapchainImageViews[index]; }
     bool supportsRayTracing() const { return m_RayTracingEnabled; }
     uint32_t getCurrentFrame() const { return m_CurrentFrame; }
+    VkSemaphore getImageAvailableSemaphore(uint32_t index) const { return m_ImageAvailableSemaphores[index]; }
+    VkSemaphore getRenderFinishedSemaphore(uint32_t index) const { return m_RenderFinishedSemaphores[index]; }
+    VkFence getInFlightFence(uint32_t index) const { return m_InFlightFences[index]; }
 
 private:
     // Initialization helpers
@@ -60,6 +64,7 @@ private:
 
     // Helper functions
     bool checkDeviceExtensionSupport(VkPhysicalDevice device);
+    bool checkRayTracingSupport(VkPhysicalDevice device);
     struct SwapchainSupportDetails {
         VkSurfaceCapabilitiesKHR capabilities;
         std::vector<VkSurfaceFormatKHR> formats;

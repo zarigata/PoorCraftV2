@@ -192,6 +192,11 @@ bool VulkanContext::selectPhysicalDevice(bool preferRayTracing) {
             continue;
         }
 
+        // Bonus for RT support if preferred
+        if (preferRayTracing && checkRayTracingSupport(device)) {
+            score += 500;
+        }
+
         if (score > bestScore) {
             bestScore = score;
             m_PhysicalDevice = device;
@@ -206,6 +211,16 @@ bool VulkanContext::selectPhysicalDevice(bool preferRayTracing) {
     VkPhysicalDeviceProperties deviceProperties;
     vkGetPhysicalDeviceProperties(m_PhysicalDevice, &deviceProperties);
     PC_INFO("Selected GPU: {}", deviceProperties.deviceName);
+
+    // Check if selected device supports RT if requested
+    if (preferRayTracing) {
+        m_RayTracingEnabled = checkRayTracingSupport(m_PhysicalDevice);
+        if (m_RayTracingEnabled) {
+            PC_INFO("Ray tracing supported on selected device");
+        } else {
+            PC_WARN("Ray tracing not supported on selected device");
+        }
+    }
 
     return true;
 }
@@ -230,14 +245,20 @@ bool VulkanContext::createLogicalDevice(bool enableRayTracing) {
 
     std::vector<const char*> extensions = deviceExtensions;
     
-    // Add ray tracing extensions if requested
-    if (enableRayTracing) {
-        for (const char* ext : rayTracingExtensions) {
-            extensions.push_back(ext);
-        }
-        m_RayTracingEnabled = true;
-        PC_INFO("Ray tracing extensions enabled");
-    }
+    // Prepare RT feature structures
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{};
+    rtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rtPipelineFeatures.rayTracingPipeline = VK_TRUE;
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelStructFeatures{};
+    accelStructFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accelStructFeatures.accelerationStructure = VK_TRUE;
+    accelStructFeatures.pNext = &rtPipelineFeatures;
+
+    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{};
+    bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+    bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
+    bufferDeviceAddressFeatures.pNext = &accelStructFeatures;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -246,6 +267,19 @@ bool VulkanContext::createLogicalDevice(bool enableRayTracing) {
     createInfo.pEnabledFeatures = &deviceFeatures;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
+    
+    // Add ray tracing extensions and features if supported
+    if (enableRayTracing && m_RayTracingEnabled) {
+        for (const char* ext : rayTracingExtensions) {
+            extensions.push_back(ext);
+        }
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+        createInfo.pNext = &bufferDeviceAddressFeatures;
+        PC_INFO("Ray tracing extensions and features enabled");
+    } else if (enableRayTracing) {
+        PC_WARN("Ray tracing requested but not supported, creating device without RT");
+        m_RayTracingEnabled = false;
+    }
 
     if (vkCreateDevice(m_PhysicalDevice, &createInfo, nullptr, &m_Device) != VK_SUCCESS) {
         PC_ERROR("Failed to create logical device");
@@ -393,8 +427,6 @@ bool VulkanContext::createSyncObjects() {
 }
 
 VkResult VulkanContext::acquireNextImage(uint32_t& imageIndex) {
-    vkWaitForFences(m_Device, 1, &m_InFlightFences[m_CurrentFrame], VK_TRUE, UINT64_MAX);
-
     VkResult result = vkAcquireNextImageKHR(m_Device, m_Swapchain, UINT64_MAX,
                                             m_ImageAvailableSemaphores[m_CurrentFrame],
                                             VK_NULL_HANDLE, &imageIndex);
@@ -447,6 +479,60 @@ bool VulkanContext::checkDeviceExtensionSupport(VkPhysicalDevice device) {
     }
 
     return requiredExtensions.empty();
+}
+
+bool VulkanContext::checkRayTracingSupport(VkPhysicalDevice device) {
+    // Check if all RT extensions are available
+    uint32_t extensionCount;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+    std::set<std::string> requiredRTExtensions(rayTracingExtensions.begin(), rayTracingExtensions.end());
+
+    for (const auto& extension : availableExtensions) {
+        requiredRTExtensions.erase(extension.extensionName);
+    }
+
+    if (!requiredRTExtensions.empty()) {
+        PC_INFO("Ray tracing extensions not available");
+        return false;
+    }
+
+    // Query RT features
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{};
+    rtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelStructFeatures{};
+    accelStructFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accelStructFeatures.pNext = &rtPipelineFeatures;
+
+    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{};
+    bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+    bufferDeviceAddressFeatures.pNext = &accelStructFeatures;
+
+    VkPhysicalDeviceFeatures2 deviceFeatures2{};
+    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures2.pNext = &bufferDeviceAddressFeatures;
+
+    vkGetPhysicalDeviceFeatures2(device, &deviceFeatures2);
+
+    // Check if all required features are supported
+    if (!rtPipelineFeatures.rayTracingPipeline) {
+        PC_INFO("Ray tracing pipeline feature not supported");
+        return false;
+    }
+    if (!accelStructFeatures.accelerationStructure) {
+        PC_INFO("Acceleration structure feature not supported");
+        return false;
+    }
+    if (!bufferDeviceAddressFeatures.bufferDeviceAddress) {
+        PC_INFO("Buffer device address feature not supported");
+        return false;
+    }
+
+    return true;
 }
 
 VulkanContext::SwapchainSupportDetails VulkanContext::querySwapchainSupport(VkPhysicalDevice device) {

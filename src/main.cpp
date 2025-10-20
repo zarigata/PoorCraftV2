@@ -200,20 +200,24 @@ int main(int argc, char* argv[]) {
             }
         }
         
-        // For now, we still initialize the existing Renderer (OpenGL path)
-        // Full backend integration would require refactoring the game loop
-        // The backend system is in place and can be activated in future phases
-        if (!PoorCraft::Renderer::getInstance().initialize()) {
-            PC_FATAL("Failed to initialize renderer");
+        // Create rendering backend via factory
+        PC_INFO("Creating rendering backend: {}", static_cast<int>(backendType));
+        std::unique_ptr<PoorCraft::IRenderBackend> renderBackend = 
+            PoorCraft::RenderBackendFactory::create(backendType, window);
+        
+        if (!renderBackend) {
+            PC_FATAL("Failed to create rendering backend");
             PoorCraft::Window::terminateGLFW();
             return 1;
         }
         
-        PC_INFO("Rendering backend: OpenGL 4.6 (active)");
-        if (backendType != PoorCraft::RenderBackendType::OPENGL) {
-            PC_INFO("Note: Vulkan backend selected in config but not yet integrated into game loop");
-            PC_INFO("Backend switching will be fully enabled in Phase 11");
+        if (!renderBackend->initialize()) {
+            PC_FATAL("Failed to initialize rendering backend");
+            PoorCraft::Window::terminateGLFW();
+            return 1;
         }
+        
+        PC_INFO("Rendering backend: {} (active)", renderBackend->getBackendName());
 
         // Create camera with perspective projection
         PC_INFO("=== Creating Camera ===");
@@ -393,65 +397,23 @@ int main(int argc, char* argv[]) {
             session->world->update(playerTransform.getPosition(), renderDistance);
         });
 
-        // Set render callback with renderer API
+        // Set render callback using backend API
         gameLoop.setRenderCallback([&]() {
-            // Use renderer API instead of raw OpenGL calls
-            auto& renderer = PoorCraft::Renderer::getInstance();
-            
             // Begin frame
-            renderer.beginFrame();
+            renderBackend->beginFrame();
             
             // Set clear color and clear
-            renderer.setClearColor(glm::vec4(0.2f, 0.3f, 0.3f, 1.0f));
-            renderer.clear();
-            
-            static std::shared_ptr<PoorCraft::Shader> blockShader = nullptr;
-            static bool shaderLoaded = false;
-
-            if (!shaderLoaded) {
-                try {
-                    blockShader = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Shader>("shaders/basic/block");
-                    if (!blockShader || !blockShader->isValid()) {
-                        PC_WARN("Failed to load block shader, using default shader");
-                        blockShader = renderer.getDefaultShader();
-                    } else {
-                        PC_INFO("Successfully loaded block shader");
-                    }
-                } catch (const std::exception& e) {
-                    PC_ERROR("Error loading block shader: " + std::string(e.what()));
-                    blockShader = renderer.getDefaultShader();
-                }
-                shaderLoaded = true;
-            }
-
-            static std::shared_ptr<PoorCraft::Shader> entityShader = nullptr;
-            static bool entityShaderLoaded = false;
-
-            if (!entityShaderLoaded) {
-                try {
-                    entityShader = PoorCraft::ResourceManager::getInstance().load<PoorCraft::Shader>("shaders/basic/entity");
-                    if (!entityShader || !entityShader->isValid()) {
-                        PC_WARN("Failed to load entity shader, using default shader");
-                        entityShader = renderer.getDefaultShader();
-                    } else {
-                        PC_INFO("Successfully loaded entity shader");
-                    }
-                } catch (const std::exception& e) {
-                    PC_ERROR("Error loading entity shader: " + std::string(e.what()));
-                    entityShader = renderer.getDefaultShader();
-                }
-                entityShaderLoaded = true;
-            }
+            renderBackend->setClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+            renderBackend->clear();
 
             if (gsm.isInGame()) {
                 auto session = ui.getGameSession();
 
-                if (session && session->world && blockShader) {
-                    blockShader->bind();
-                    session->world->render(camera, *blockShader);
+                if (session && session->world) {
+                    renderBackend->renderWorld(*session->world, camera, 0.0f);
                 }
 
-                if (session && session->entityRenderer && entityShader) {
+                if (session && session->entityRenderer) {
                     float alpha = 0.0f;
                     const float fixedTimestep = gameLoop.getFixedTimestep();
                     if (fixedTimestep > 0.0f) {
@@ -459,8 +421,7 @@ int main(int argc, char* argv[]) {
                     }
                     alpha = std::clamp(alpha, 0.0f, 1.0f);
 
-                    entityShader->bind();
-                    session->entityRenderer->render(camera, *entityShader, alpha);
+                    renderBackend->renderEntities(*session->entityRenderer, camera, alpha);
                 }
 
 #if POORCRAFT_HAS_DEBUG_RENDERER
@@ -470,9 +431,9 @@ int main(int argc, char* argv[]) {
 #endif
             }
 
-            ui.render();
+            renderBackend->renderUI();
 
-            renderer.endFrame();
+            renderBackend->endFrame();
         });
 
         // Run the game loop
@@ -483,7 +444,8 @@ int main(int argc, char* argv[]) {
         // Cleanup
         ui.shutdown();
 
-        PoorCraft::Renderer::getInstance().shutdown();
+        renderBackend->shutdown();
+        renderBackend.reset();
         window.shutdown();
         PoorCraft::Window::terminateGLFW();
         PoorCraft::ResourceManager::getInstance().clear();

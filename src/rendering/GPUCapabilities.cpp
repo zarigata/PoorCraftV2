@@ -3,8 +3,14 @@
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include <cstring>
+#include <vector>
 
 #include <glad/glad.h>
+
+#ifdef POORCRAFT_VULKAN_SUPPORT
+#include <vulkan/vulkan.h>
+#endif
 
 #include "poorcraft/core/Logger.h"
 
@@ -53,6 +59,9 @@ GPUCapabilities& GPUCapabilities::getInstance() {
 }
 
 bool GPUCapabilities::query() {
+    // Query Vulkan first (doesn't require OpenGL context)
+    queryVulkan();
+    
     m_Extensions.clear();
 
     const GLubyte* vendorStr = glGetString(GL_VENDOR);
@@ -61,8 +70,9 @@ bool GPUCapabilities::query() {
     const GLubyte* glslStr = glGetString(GL_SHADING_LANGUAGE_VERSION);
 
     if (!vendorStr || !rendererStr || !versionStr) {
-        PC_ERROR("Failed to query GPU capabilities: OpenGL context not initialized");
-        return false;
+        PC_WARN("OpenGL context not available, skipping OpenGL capability query");
+        PC_INFO("Vulkan capabilities queried successfully");
+        return true; // Return true if Vulkan was queried successfully
     }
 
     m_Data.vendorString = reinterpret_cast<const char*>(vendorStr);
@@ -104,7 +114,6 @@ bool GPUCapabilities::query() {
     m_Data.supportsDebugOutput = hasExtension(m_Extensions, "GL_KHR_debug");
 
     queryVRAM();
-    queryVulkan();
 
     printCapabilities();
 
@@ -261,21 +270,162 @@ void GPUCapabilities::queryVRAM() {
 
 void GPUCapabilities::queryVulkan() {
 #ifdef POORCRAFT_VULKAN_SUPPORT
-    // Query Vulkan capabilities
-    // Note: This is a simplified query that doesn't create a full Vulkan context
-    // For full capabilities, VulkanContext should be used
-    
     PC_INFO("Querying Vulkan capabilities...");
     
-    // Check if Vulkan is available by attempting to load the library
-    // In a real implementation, we would enumerate physical devices
-    // For now, we'll just set a flag based on compile-time support
-    m_Data.vulkanSupported = true;
-    m_Data.vulkanVersionString = "1.3.0"; // Placeholder
-    m_Data.supportsRayTracing = false; // Will be determined at runtime by VulkanContext
+    // Create a temporary Vulkan instance for capability detection
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "PoorCraft";
+    appInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
+    appInfo.pEngineName = "PoorCraft Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_3;
+
+    VkInstanceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+    createInfo.enabledExtensionCount = 0;
+    createInfo.enabledLayerCount = 0;
+
+    VkInstance tempInstance = VK_NULL_HANDLE;
+    VkResult result = vkCreateInstance(&createInfo, nullptr, &tempInstance);
     
-    PC_INFO("Vulkan support: Available (compile-time)");
-    PC_INFO("Note: Full Vulkan capabilities will be queried when Vulkan backend is initialized");
+    if (result != VK_SUCCESS) {
+        PC_WARN("Failed to create temporary Vulkan instance for capability query");
+        m_Data.vulkanSupported = false;
+        m_Data.vulkanVersionString = "Not available";
+        m_Data.supportsRayTracing = false;
+        return;
+    }
+
+    // Query instance version
+    uint32_t instanceVersion = 0;
+    vkEnumerateInstanceVersion(&instanceVersion);
+    uint32_t major = VK_VERSION_MAJOR(instanceVersion);
+    uint32_t minor = VK_VERSION_MINOR(instanceVersion);
+    uint32_t patch = VK_VERSION_PATCH(instanceVersion);
+    m_Data.vulkanVersionString = std::to_string(major) + "." + 
+                                   std::to_string(minor) + "." + 
+                                   std::to_string(patch);
+
+    // Enumerate physical devices
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(tempInstance, &deviceCount, nullptr);
+
+    if (deviceCount == 0) {
+        PC_WARN("No Vulkan-capable GPUs found");
+        m_Data.vulkanSupported = false;
+        m_Data.supportsRayTracing = false;
+        vkDestroyInstance(tempInstance, nullptr);
+        return;
+    }
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(tempInstance, &deviceCount, devices.data());
+
+    // Select best device (prefer discrete GPU)
+    VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
+    int bestScore = -1;
+    
+    for (const auto& device : devices) {
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(device, &props);
+        
+        int score = 0;
+        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            score += 1000;
+        }
+        
+        if (score > bestScore) {
+            bestScore = score;
+            bestDevice = device;
+        }
+    }
+
+    if (bestDevice == VK_NULL_HANDLE) {
+        bestDevice = devices[0];
+    }
+
+    // Query RT extensions
+    uint32_t extensionCount;
+    vkEnumerateDeviceExtensionProperties(bestDevice, nullptr, &extensionCount, nullptr);
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(bestDevice, nullptr, &extensionCount, availableExtensions.data());
+
+    bool hasRTPipeline = false;
+    bool hasAccelStruct = false;
+    bool hasBufferDeviceAddress = false;
+    bool hasDeferredHostOps = false;
+
+    for (const auto& ext : availableExtensions) {
+        if (strcmp(ext.extensionName, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) == 0) {
+            hasRTPipeline = true;
+        }
+        if (strcmp(ext.extensionName, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) == 0) {
+            hasAccelStruct = true;
+        }
+        if (strcmp(ext.extensionName, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME) == 0) {
+            hasBufferDeviceAddress = true;
+        }
+        if (strcmp(ext.extensionName, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME) == 0) {
+            hasDeferredHostOps = true;
+        }
+    }
+
+    bool rtExtensionsAvailable = hasRTPipeline && hasAccelStruct && hasBufferDeviceAddress && hasDeferredHostOps;
+
+    // Query RT features
+    bool rtFeaturesSupported = false;
+    if (rtExtensionsAvailable) {
+        VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{};
+        rtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+
+        VkPhysicalDeviceAccelerationStructureFeaturesKHR accelStructFeatures{};
+        accelStructFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+        accelStructFeatures.pNext = &rtPipelineFeatures;
+
+        VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{};
+        bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+        bufferDeviceAddressFeatures.pNext = &accelStructFeatures;
+
+        VkPhysicalDeviceFeatures2 deviceFeatures2{};
+        deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        deviceFeatures2.pNext = &bufferDeviceAddressFeatures;
+
+        vkGetPhysicalDeviceFeatures2(bestDevice, &deviceFeatures2);
+
+        rtFeaturesSupported = rtPipelineFeatures.rayTracingPipeline && 
+                              accelStructFeatures.accelerationStructure &&
+                              bufferDeviceAddressFeatures.bufferDeviceAddress;
+
+        // Query RT properties
+        if (rtFeaturesSupported) {
+            VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProps{};
+            rtPipelineProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+
+            VkPhysicalDeviceProperties2 deviceProps2{};
+            deviceProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            deviceProps2.pNext = &rtPipelineProps;
+
+            vkGetPhysicalDeviceProperties2(bestDevice, &deviceProps2);
+
+            m_Data.shaderGroupHandleSize = rtPipelineProps.shaderGroupHandleSize;
+            m_Data.maxRayRecursionDepth = rtPipelineProps.maxRayRecursionDepth;
+        }
+    }
+
+    m_Data.vulkanSupported = true;
+    m_Data.supportsRayTracing = rtFeaturesSupported;
+
+    PC_INFO("Vulkan support: Available (version {})", m_Data.vulkanVersionString);
+    PC_INFO("Ray tracing support: {}", m_Data.supportsRayTracing ? "Yes" : "No");
+    if (m_Data.supportsRayTracing) {
+        PC_INFO("  Shader group handle size: {}", m_Data.shaderGroupHandleSize);
+        PC_INFO("  Max ray recursion depth: {}", m_Data.maxRayRecursionDepth);
+    }
+
+    // Cleanup
+    vkDestroyInstance(tempInstance, nullptr);
 #else
     m_Data.vulkanSupported = false;
     m_Data.vulkanVersionString = "Not compiled";

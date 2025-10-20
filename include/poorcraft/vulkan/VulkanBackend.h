@@ -9,6 +9,10 @@ namespace PoorCraft {
 
 // Forward declarations
 class VulkanContext;
+class VulkanShaderManager;
+class VulkanResourceManager;
+class VulkanRasterRenderer;
+class RTRenderer;
 class Window;
 
 /**
@@ -45,9 +49,17 @@ public:
 
 private:
     void handleSwapchainRecreation();
+    bool initializeImGui();
 
     Window& m_Window;
     std::unique_ptr<VulkanContext> m_Context;
+    std::unique_ptr<VulkanShaderManager> m_ShaderManager;
+    std::unique_ptr<VulkanResourceManager> m_ResourceManager;
+    std::unique_ptr<VulkanRasterRenderer> m_RasterRenderer;
+    std::unique_ptr<RTRenderer> m_RTRenderer;
+    
+    VkDescriptorPool m_ImGuiDescriptorPool = VK_NULL_HANDLE;
+    
     bool m_RayTracingEnabled;
     bool m_Initialized = false;
     

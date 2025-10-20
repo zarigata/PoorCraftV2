@@ -5,16 +5,21 @@
 layout(location = 0) rayPayloadInEXT vec3 hitColor;
 
 // Camera uniform buffer
-layout(set = 2, binding = 0) uniform CameraUBO {
+layout(set = 0, binding = 1) uniform CameraUBO {
     mat4 view;
     mat4 projection;
     mat4 invView;
     mat4 invProjection;
     vec3 position;
+    float _pad0;
     vec3 sunDirection;
+    float _pad1;
     vec3 sunColor;
+    float _pad2;
     vec3 skyTopColor;
+    float _pad3;
     vec3 skyHorizonColor;
+    float ambientStrength;
     float timeOfDay;
 } camera;
 

@@ -11,6 +11,9 @@ shaders/
 ├── entity/            # Entity rendering shaders with skinning support
 ├── ui/                # 2D UI rendering shaders
 ├── post_processing/   # Screen-space effects (bloom, SSAO, etc.)
+├── particle/          # Particle system shaders
+├── sky/               # Sky rendering shaders
+├── rt/                # Ray tracing shaders (Vulkan)
 └── README.md          # This file
 ```
 
@@ -227,10 +230,54 @@ Shaders should be compatible with:
 - **Intel** integrated graphics
 - Different driver versions and OpenGL implementations
 
+## Vulkan Shaders
+
+### Compiling Vulkan Shaders to SPIR-V
+
+Vulkan shaders must be compiled to SPIR-V bytecode using `glslangValidator` or `glslc`:
+
+```bash
+# Using glslangValidator
+glslangValidator -V shaders/basic/fullscreen.vert -o shaders/basic/fullscreen.vert.spv
+glslangValidator -V shaders/basic/fullscreen.frag -o shaders/basic/fullscreen.frag.spv
+
+# Using glslc (part of Vulkan SDK)
+glslc shaders/basic/fullscreen.vert -o shaders/basic/fullscreen.vert.spv
+glslc shaders/basic/fullscreen.frag -o shaders/basic/fullscreen.frag.spv
+```
+
+### Ray Tracing Shaders
+
+Ray tracing shaders use Vulkan-specific extensions:
+
+```bash
+# Compile RT shaders
+glslc shaders/rt/raygen.rgen -o shaders/rt/raygen.rgen.spv
+glslc shaders/rt/miss.rmiss -o shaders/rt/miss.rmiss.spv
+glslc shaders/rt/closesthit.rchit -o shaders/rt/closesthit.rchit.spv
+```
+
+**RT Shader Types:**
+- `.rgen` - Ray generation shaders (entry point for ray tracing)
+- `.rmiss` - Miss shaders (executed when ray misses geometry)
+- `.rchit` - Closest hit shaders (executed on ray-geometry intersection)
+- `.rahit` - Any hit shaders (for transparency/alpha testing)
+- `.rint` - Intersection shaders (for custom geometry)
+
+### Automated Compilation
+
+A compilation script is provided for convenience:
+
+```bash
+# Compile all Vulkan shaders
+./scripts/compile_shaders.sh
+```
+
 ## Resources
 
 - **[OpenGL Shading Language Specification](https://www.khronos.org/opengl/wiki/OpenGL_Shading_Language)**
 - **[GLSL Tutorial](https://learnopengl.com/Getting-started/Shaders)**
 - **[Shader Best Practices](https://developer.nvidia.com/gpu-programming-guide)**
+- **[Vulkan Ray Tracing Tutorial](https://nvpro-samples.github.io/vk_raytracing_tutorial_KHR/)**
 
 For more information about the shader loading system, see the ShaderManager documentation.

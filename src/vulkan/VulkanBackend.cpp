@@ -2,8 +2,15 @@
 
 #include "poorcraft/vulkan/VulkanBackend.h"
 #include "poorcraft/vulkan/VulkanContext.h"
+#include "poorcraft/vulkan/VulkanShaderManager.h"
+#include "poorcraft/vulkan/VulkanResourceManager.h"
+#include "poorcraft/vulkan/VulkanRasterRenderer.h"
+#include "poorcraft/vulkan/RTRenderer.h"
 #include "poorcraft/window/Window.h"
 #include "poorcraft/core/Logger.h"
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
+#include <imgui_impl_glfw.h>
 
 namespace PoorCraft {
 
@@ -40,6 +47,39 @@ bool VulkanBackend::initialize() {
         m_RayTracingEnabled = false;
     }
 
+    // Create shader manager
+    m_ShaderManager = std::make_unique<VulkanShaderManager>(*m_Context);
+
+    // Create resource manager
+    m_ResourceManager = std::make_unique<VulkanResourceManager>(*m_Context);
+    if (!m_ResourceManager->initialize()) {
+        PC_ERROR("Failed to initialize resource manager");
+        return false;
+    }
+
+    // Create raster renderer (always needed for UI and fallback)
+    m_RasterRenderer = std::make_unique<VulkanRasterRenderer>(*m_Context, *m_ShaderManager);
+    if (!m_RasterRenderer->initialize()) {
+        PC_ERROR("Failed to initialize raster renderer");
+        return false;
+    }
+
+    // Create RT renderer if enabled
+    if (m_RayTracingEnabled) {
+        m_RTRenderer = std::make_unique<RTRenderer>(*m_Context, *m_ShaderManager, *m_ResourceManager);
+        if (!m_RTRenderer->initialize()) {
+            PC_WARN("Failed to initialize RT renderer, falling back to raster");
+            m_RayTracingEnabled = false;
+            m_RTRenderer.reset();
+        }
+    }
+
+    // Initialize ImGui Vulkan backend
+    if (!initializeImGui()) {
+        PC_ERROR("Failed to initialize ImGui Vulkan backend");
+        return false;
+    }
+
     m_Initialized = true;
     PC_INFO("Vulkan backend initialized successfully");
     return true;
@@ -47,6 +87,37 @@ bool VulkanBackend::initialize() {
 
 void VulkanBackend::shutdown() {
     PC_INFO("Shutting down Vulkan backend");
+    
+    // Shutdown ImGui
+    if (m_Context) {
+        vkDeviceWaitIdle(m_Context->getDevice());
+        ImGui_ImplVulkan_Shutdown();
+        
+        if (m_ImGuiDescriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(m_Context->getDevice(), m_ImGuiDescriptorPool, nullptr);
+            m_ImGuiDescriptorPool = VK_NULL_HANDLE;
+        }
+    }
+    
+    if (m_RTRenderer) {
+        m_RTRenderer->cleanup();
+        m_RTRenderer.reset();
+    }
+    
+    if (m_RasterRenderer) {
+        m_RasterRenderer->cleanup();
+        m_RasterRenderer.reset();
+    }
+    
+    if (m_ShaderManager) {
+        m_ShaderManager->cleanup();
+        m_ShaderManager.reset();
+    }
+    
+    if (m_ResourceManager) {
+        m_ResourceManager->shutdown();
+        m_ResourceManager.reset();
+    }
     
     if (m_Context) {
         m_Context->shutdown();
@@ -57,6 +128,12 @@ void VulkanBackend::shutdown() {
 }
 
 void VulkanBackend::beginFrame() {
+    uint32_t currentFrame = m_Context->getCurrentFrame();
+    
+    // Wait for the fence before reusing frame resources
+    VkFence inFlightFence = m_Context->getInFlightFence(currentFrame);
+    vkWaitForFences(m_Context->getDevice(), 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+    
     VkResult result = m_Context->acquireNextImage(m_CurrentImageIndex);
     
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -66,9 +143,12 @@ void VulkanBackend::beginFrame() {
         PC_ERROR("Failed to acquire swapchain image");
         return;
     }
+    
+    // Reset the fence after successful image acquisition
+    vkResetFences(m_Context->getDevice(), 1, &inFlightFence);
 
     // Begin command buffer recording
-    VkCommandBuffer commandBuffer = m_Context->getCommandBuffer(m_Context->getCurrentFrame());
+    VkCommandBuffer commandBuffer = m_Context->getCommandBuffer(currentFrame);
     
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -83,34 +163,42 @@ void VulkanBackend::beginFrame() {
 }
 
 void VulkanBackend::endFrame() {
-    VkCommandBuffer commandBuffer = m_Context->getCommandBuffer(m_Context->getCurrentFrame());
+    uint32_t currentFrame = m_Context->getCurrentFrame();
+    VkCommandBuffer commandBuffer = m_Context->getCommandBuffer(currentFrame);
     
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         PC_ERROR("Failed to record command buffer");
         return;
     }
 
-    // Submit command buffer
+    // Submit command buffer with proper synchronization
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = {m_Context->getCommandBuffer(0)}; // Placeholder
+    // Wait on image-available semaphore at COLOR_ATTACHMENT_OUTPUT stage
+    VkSemaphore imageAvailableSemaphore = m_Context->getImageAvailableSemaphore(currentFrame);
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = 0;
-    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = &imageAvailableSemaphore;
     submitInfo.pWaitDstStageMask = waitStages;
+    
+    // Submit the command buffer
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    VkSemaphore signalSemaphores[] = {m_Context->getCommandBuffer(0)}; // Placeholder
-    submitInfo.signalSemaphoreCount = 0;
-    submitInfo.pSignalSemaphores = signalSemaphores;
+    // Signal render-finished semaphore when done
+    VkSemaphore renderFinishedSemaphore = m_Context->getRenderFinishedSemaphore(currentFrame);
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &renderFinishedSemaphore;
 
-    if (vkQueueSubmit(m_Context->getGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+    // Submit with in-flight fence
+    VkFence inFlightFence = m_Context->getInFlightFence(currentFrame);
+    if (vkQueueSubmit(m_Context->getGraphicsQueue(), 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
         PC_ERROR("Failed to submit draw command buffer");
+        return;
     }
 
-    // Present
+    // Present, waiting on render-finished semaphore
     VkResult result = m_Context->presentImage(m_CurrentImageIndex);
     
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
@@ -150,13 +238,20 @@ void VulkanBackend::setViewport(int x, int y, int width, int height) {
 }
 
 void VulkanBackend::renderWorld(World& world, Camera& camera, float deltaTime) {
-    // Placeholder: Vulkan world rendering not fully implemented yet
-    // This would call RTRenderer for ray tracing or VulkanRasterRenderer for rasterization
-    (void)world;
-    (void)camera;
-    (void)deltaTime;
+    VkCommandBuffer commandBuffer = m_Context->getCommandBuffer(m_Context->getCurrentFrame());
     
-    PC_TRACE("Vulkan world rendering (placeholder)");
+    if (m_RayTracingEnabled && m_RTRenderer) {
+        // Use ray tracing path
+        VkExtent2D extent = m_Context->getSwapchainExtent();
+        m_RTRenderer->traceRays(commandBuffer, world, camera, extent.width, extent.height);
+    } else if (m_RasterRenderer) {
+        // Use rasterization path
+        m_RasterRenderer->beginRenderPass(commandBuffer, m_CurrentImageIndex);
+        m_RasterRenderer->renderWorld(commandBuffer, world, camera);
+        // Don't end render pass yet - UI will render in the same pass
+    }
+    
+    (void)deltaTime;
 }
 
 void VulkanBackend::renderEntities(EntityRenderer& entityRenderer, Camera& camera, float alpha) {
@@ -167,8 +262,38 @@ void VulkanBackend::renderEntities(EntityRenderer& entityRenderer, Camera& camer
 }
 
 void VulkanBackend::renderUI() {
-    // Placeholder: UI rendering via ImGui Vulkan backend
-    PC_TRACE("Vulkan UI rendering (placeholder)");
+    VkCommandBuffer commandBuffer = m_Context->getCommandBuffer(m_Context->getCurrentFrame());
+    
+    if (m_RayTracingEnabled && m_RTRenderer) {
+        // RT mode: Composite RT output to swapchain, then render ImGui
+        VkExtent2D extent = m_Context->getSwapchainExtent();
+        VkRenderPass renderPass = m_RasterRenderer->getRenderPass();
+        VkFramebuffer framebuffer = m_RasterRenderer->getFramebuffer(m_CurrentImageIndex);
+        
+        // Composite RT output (begins render pass)
+        m_RTRenderer->composite(commandBuffer, renderPass, framebuffer, extent.width, extent.height);
+        
+        // Render ImGui in the same pass
+        ImGui::Render();
+        ImDrawData* drawData = ImGui::GetDrawData();
+        if (drawData) {
+            ImGui_ImplVulkan_RenderDrawData(drawData, commandBuffer);
+        }
+        
+        m_RasterRenderer->endRenderPass(commandBuffer);
+    } else {
+        // Raster mode: ImGui renders in the same pass as world rendering
+        ImGui::Render();
+        ImDrawData* drawData = ImGui::GetDrawData();
+        if (drawData) {
+            ImGui_ImplVulkan_RenderDrawData(drawData, commandBuffer);
+        }
+        
+        // End the render pass started in renderWorld
+        if (m_RasterRenderer) {
+            m_RasterRenderer->endRenderPass(commandBuffer);
+        }
+    }
 }
 
 RenderBackendType VulkanBackend::getBackendType() const {
@@ -178,6 +303,80 @@ RenderBackendType VulkanBackend::getBackendType() const {
 void VulkanBackend::handleSwapchainRecreation() {
     PC_INFO("Recreating swapchain");
     m_Context->recreateSwapchain();
+}
+
+bool VulkanBackend::initializeImGui() {
+    // Create descriptor pool for ImGui
+    VkDescriptorPoolSize poolSizes[] = {
+        { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.maxSets = 1000;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(sizeof(poolSizes) / sizeof(poolSizes[0]));
+    poolInfo.pPoolSizes = poolSizes;
+
+    if (vkCreateDescriptorPool(m_Context->getDevice(), &poolInfo, nullptr, &m_ImGuiDescriptorPool) != VK_SUCCESS) {
+        PC_ERROR("Failed to create ImGui descriptor pool");
+        return false;
+    }
+
+    // Initialize ImGui Vulkan backend
+    ImGui_ImplVulkan_InitInfo initInfo{};
+    initInfo.Instance = m_Context->getInstance();
+    initInfo.PhysicalDevice = m_Context->getPhysicalDevice();
+    initInfo.Device = m_Context->getDevice();
+    initInfo.QueueFamily = 0; // Assuming graphics queue family is 0
+    initInfo.Queue = m_Context->getGraphicsQueue();
+    initInfo.PipelineCache = VK_NULL_HANDLE;
+    initInfo.DescriptorPool = m_ImGuiDescriptorPool;
+    initInfo.Subpass = 0;
+    initInfo.MinImageCount = 2;
+    initInfo.ImageCount = m_Context->getSwapchainImageCount();
+    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    if (m_RasterRenderer) {
+        ImGui_ImplVulkan_Init(&initInfo, m_RasterRenderer->getRenderPass());
+    } else {
+        PC_WARN("No render pass available for ImGui initialization");
+        return false;
+    }
+
+    // Upload fonts
+    VkCommandBuffer commandBuffer = m_Context->getCommandBuffer(0);
+    
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    ImGui_ImplVulkan_CreateFontsTexture(commandBuffer);
+    vkEndCommandBuffer(commandBuffer);
+    
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+    
+    vkQueueSubmit(m_Context->getGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(m_Context->getGraphicsQueue());
+    
+    ImGui_ImplVulkan_DestroyFontUploadObjects();
+
+    PC_INFO("ImGui Vulkan backend initialized");
+    return true;
 }
 
 } // namespace PoorCraft

@@ -1,9 +1,12 @@
 #include "poorcraft/rendering/OpenGLBackend.h"
 #include "poorcraft/rendering/Renderer.h"
+#include "poorcraft/rendering/Shader.h"
 #include "poorcraft/world/World.h"
 #include "poorcraft/entity/EntityRenderer.h"
 #include "poorcraft/ui/UIManager.h"
+#include "poorcraft/resource/ResourceManager.h"
 #include "poorcraft/core/Logger.h"
+#include <memory>
 
 namespace PoorCraft {
 
@@ -52,19 +55,55 @@ void OpenGLBackend::setViewport(int x, int y, int width, int height) {
 }
 
 void OpenGLBackend::renderWorld(World& world, Camera& camera, float deltaTime) {
-    // World rendering is handled by World::render() which uses existing OpenGL path
-    // This is called from the main game loop
-    (void)world;
-    (void)camera;
-    (void)deltaTime;
+    // Load block shader if not already loaded
+    static std::shared_ptr<Shader> blockShader = nullptr;
+    static bool shaderLoaded = false;
+    
+    if (!shaderLoaded) {
+        try {
+            blockShader = ResourceManager::getInstance().load<Shader>("shaders/basic/block");
+            if (!blockShader || !blockShader->isValid()) {
+                PC_WARN("Failed to load block shader, using default");
+                blockShader = Renderer::getInstance().getDefaultShader();
+            }
+        } catch (const std::exception& e) {
+            PC_ERROR("Error loading block shader: {}", e.what());
+            blockShader = Renderer::getInstance().getDefaultShader();
+        }
+        shaderLoaded = true;
+    }
+    
+    if (blockShader) {
+        blockShader->bind();
+        world.render(camera, *blockShader);
+    }
+    
+    (void)deltaTime; // Not currently used
 }
 
 void OpenGLBackend::renderEntities(EntityRenderer& entityRenderer, Camera& camera, float alpha) {
-    // Entity rendering is handled by EntityRenderer::render()
-    // This is called from the main game loop
-    (void)entityRenderer;
-    (void)camera;
-    (void)alpha;
+    // Load entity shader if not already loaded
+    static std::shared_ptr<Shader> entityShader = nullptr;
+    static bool shaderLoaded = false;
+    
+    if (!shaderLoaded) {
+        try {
+            entityShader = ResourceManager::getInstance().load<Shader>("shaders/basic/entity");
+            if (!entityShader || !entityShader->isValid()) {
+                PC_WARN("Failed to load entity shader, using default");
+                entityShader = Renderer::getInstance().getDefaultShader();
+            }
+        } catch (const std::exception& e) {
+            PC_ERROR("Error loading entity shader: {}", e.what());
+            entityShader = Renderer::getInstance().getDefaultShader();
+        }
+        shaderLoaded = true;
+    }
+    
+    if (entityShader) {
+        entityShader->bind();
+        entityRenderer.render(camera, *entityShader, alpha);
+    }
 }
 
 void OpenGLBackend::renderUI() {
