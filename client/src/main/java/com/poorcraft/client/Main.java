@@ -2,7 +2,6 @@ package com.poorcraft.client;
 
 import com.poorcraft.common.Constants;
 import com.poorcraft.common.config.Configuration;
-import com.poorcraft.common.util.Logger;
 import com.poorcraft.core.Engine;
 import org.slf4j.Logger;
 
@@ -21,7 +20,7 @@ import java.nio.file.Paths;
  * </ul>
  */
 public class Main {
-    private static final Logger LOGGER = Logger.getLogger(Main.class);
+    private static final Logger LOGGER = com.poorcraft.common.util.Logger.getLogger(Main.class);
     
     public static void main(String[] args) {
         LOGGER.info("=== {} v{} ===", Constants.Game.NAME, Constants.Game.VERSION);

@@ -1,7 +1,6 @@
 package com.poorcraft.core;
 
 import com.poorcraft.common.config.Configuration;
-import com.poorcraft.common.util.Logger;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -19,7 +18,7 @@ import java.nio.file.Paths;
  * </ul>
  */
 public class Engine {
-    private static final Logger LOGGER = Logger.getLogger(Engine.class);
+    private static final Logger LOGGER = com.poorcraft.common.util.Logger.getLogger(Engine.class);
     
     private Configuration config;
     private boolean running;

@@ -2,6 +2,8 @@ plugins {
     id 'application'
 }
 
+apply plugin: 'com.poorcraft.distribution'
+
 dependencies {
     // Depend on common and core modules
     implementation project(':common')
@@ -15,12 +17,14 @@ dependencies {
     implementation "org.lwjgl:lwjgl-stb"
     implementation "org.lwjgl:lwjgl-openal"
     
-    // LWJGL natives for all platforms
-    runtimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
-    runtimeOnly "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
-    runtimeOnly "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
-    runtimeOnly "org.lwjgl:lwjgl-stb::${lwjglNatives}"
-    runtimeOnly "org.lwjgl:lwjgl-openal::${lwjglNatives}"
+    // LWJGL natives for current platform
+    if (lwjglNatives != null) {
+        runtimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
+        runtimeOnly "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
+        runtimeOnly "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
+        runtimeOnly "org.lwjgl:lwjgl-stb::${lwjglNatives}"
+        runtimeOnly "org.lwjgl:lwjgl-openal::${lwjglNatives}"
+    }
     
     // Additional natives for cross-platform builds
     if (lwjglNatives != 'natives-windows') {
@@ -89,4 +93,11 @@ jar {
     }
 }
 
-// TODO: Distribution tasks will be added here after buildSrc plugin is created
+distribution {
+    appName = 'PoorCraft'
+    version = project.version
+    mainClass = 'com.poorcraft.client.Main'
+    windowsIcon = file('distribution/icons/poorcraft.ico')
+    linuxIcon = file('distribution/icons/poorcraft-256.png')
+    macIcon = file('distribution/icons/poorcraft.icns')
+}

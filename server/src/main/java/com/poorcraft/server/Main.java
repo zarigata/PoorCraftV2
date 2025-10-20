@@ -2,10 +2,12 @@ package com.poorcraft.server;
 
 import com.poorcraft.common.Constants;
 import com.poorcraft.common.config.Configuration;
-import com.poorcraft.common.util.Logger;
 import org.slf4j.Logger;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
@@ -21,7 +23,7 @@ import java.nio.file.Paths;
  * </ul>
  */
 public class Main {
-    private static final Logger LOGGER = Logger.getLogger(Main.class);
+    private static final Logger LOGGER = com.poorcraft.common.util.Logger.getLogger(Main.class);
     
     public static void main(String[] args) {
         LOGGER.info("=== {} Server v{} ===", Constants.Game.NAME, Constants.Game.VERSION);
@@ -44,10 +46,32 @@ public class Main {
         }, "Shutdown-Hook"));
         
         try {
+            // Ensure config directory exists and copy default config if needed
+            Path configDir = Paths.get("config");
+            Path serverConfigPath = configDir.resolve("server.yml");
+            
+            if (!Files.exists(configDir)) {
+                Files.createDirectories(configDir);
+            }
+            
+            if (!Files.exists(serverConfigPath)) {
+                LOGGER.info("Server configuration not found, creating default config at {}", serverConfigPath);
+                try (InputStream defaultConfig = Main.class.getResourceAsStream("/server-config.yml")) {
+                    if (defaultConfig != null) {
+                        Files.copy(defaultConfig, serverConfigPath);
+                        LOGGER.info("Default server configuration copied to {}. Edit this file to customize settings.", serverConfigPath);
+                    } else {
+                        LOGGER.warn("Default server-config.yml resource not found in classpath");
+                    }
+                } catch (IOException e) {
+                    LOGGER.warn("Could not copy default server configuration", e);
+                }
+            }
+            
             // Load server configuration
             Configuration config;
             try {
-                config = new Configuration(Paths.get("config", "server.yml"));
+                config = new Configuration(serverConfigPath);
             } catch (IOException e) {
                 LOGGER.warn("Could not load server configuration, using defaults", e);
                 config = new Configuration();
