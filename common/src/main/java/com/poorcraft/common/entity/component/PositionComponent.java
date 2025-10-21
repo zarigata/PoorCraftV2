@@ -30,6 +30,10 @@ public class PositionComponent implements Component {
         this.position.set(newPosition);
     }
 
+    public Vector3f getPreviousPosition() {
+        return new Vector3f(previousPosition);
+    }
+
     public void setPosition(float x, float y, float z) {
         this.position.set(x, y, z);
     }

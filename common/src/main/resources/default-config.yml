@@ -78,3 +78,30 @@ entity:
   asyncSkinLoading: true
   defaultPlayerSkin: "skins/player_default.png"
   defaultNPCSkin: "skins/npc_villager.png"
+
+physics:
+  gravity: -32.0
+  jumpVelocity: 10.0
+  terminalVelocity: -78.4
+  groundFriction: 0.91
+  airFriction: 0.98
+  stepHeight: 0.6
+  enableCollision: true
+
+controls:
+  forward: W
+  backward: S
+  left: A
+  right: D
+  jump: SPACE
+  crouch: LEFT_SHIFT
+  sprint: LEFT_CONTROL
+  attack: MOUSE_LEFT
+  use: MOUSE_RIGHT
+  drop: Q
+  inventory: E
+
+gameplay:
+  blockBreakTime: 1.0
+  blockPlaceDelay: 0.25
+  reachDistance: 5.0

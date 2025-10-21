@@ -1,15 +1,23 @@
 package com.poorcraft.client.world;
 
+import com.poorcraft.client.entity.EntityRenderer;
+import com.poorcraft.client.player.BlockInteractionHandler;
+import com.poorcraft.client.player.PlayerController;
+import com.poorcraft.client.render.BlockSelectionRenderer;
 import com.poorcraft.client.render.camera.Camera;
 import com.poorcraft.client.render.shader.ShaderProgram;
 import com.poorcraft.client.render.texture.TextureAtlas;
 import com.poorcraft.client.resource.ShaderManager;
 import com.poorcraft.client.resource.TextureManager;
+import com.poorcraft.client.input.InputManager;
 import com.poorcraft.common.config.Configuration;
+import com.poorcraft.common.entity.Entity;
+import com.poorcraft.common.entity.EntityManager;
 import com.poorcraft.common.util.ChunkPos;
 import com.poorcraft.common.world.gen.TerrainGenerator;
 import com.poorcraft.core.Renderable;
 import com.poorcraft.core.Updatable;
+import org.joml.Vector3f;
 import org.slf4j.Logger;
 
 import java.awt.HeadlessException;
@@ -24,7 +32,7 @@ import java.util.Set;
 /**
  * Main World class that coordinates all world systems.
  */
-public class World implements Updatable, Renderable {
+public class World implements Updatable, Renderable, com.poorcraft.common.world.World {
     
     private static final Logger LOGGER = com.poorcraft.common.util.Logger.getLogger(World.class);
     
@@ -37,6 +45,13 @@ public class World implements Updatable, Renderable {
     private final TextureAtlas blockAtlas;
     private final ShaderProgram worldShader;
     private final Set<String> missingTextureWarnings = new HashSet<>();
+    private final EntityManager entityManager;
+    private final EntityRenderer entityRenderer;
+    private final InputManager inputManager;
+    private final BlockSelectionRenderer blockSelectionRenderer;
+    private Entity playerEntity;
+    private PlayerController playerController;
+    private BlockInteractionHandler blockInteractionHandler;
     
     /**
      * Creates a new world.
@@ -47,11 +62,12 @@ public class World implements Updatable, Renderable {
      * @param shaderManager Shader manager
      * @param textureManager Texture manager
      */
-    public World(long seed, Configuration config, Camera camera, 
-                 ShaderManager shaderManager, TextureManager textureManager) {
+    public World(long seed, Configuration config, Camera camera,
+                 ShaderManager shaderManager, TextureManager textureManager, InputManager inputManager) {
         this.seed = seed;
         this.config = config;
         this.camera = camera;
+        this.inputManager = inputManager;
         
         LOGGER.info("Initializing world with seed: {}", seed);
         
@@ -76,6 +92,10 @@ public class World implements Updatable, Renderable {
         // Initialize chunk loader with texture lookup function
         this.chunkLoader = new ChunkLoader(config, terrainGenerator, chunkRenderer, this::getTextureLayer);
         
+        this.entityManager = new EntityManager(config);
+        this.entityRenderer = new EntityRenderer(entityManager, camera, shaderManager, textureManager, config);
+        this.blockSelectionRenderer = new BlockSelectionRenderer(camera, shaderManager);
+
         LOGGER.info("World initialized successfully");
     }
     
@@ -195,14 +215,23 @@ public class World implements Updatable, Renderable {
     public void update(double dt) {
         // Update chunk loading based on camera position
         chunkLoader.update(camera.getPosition().x, camera.getPosition().z);
-        
+
         // Process chunks that need re-meshing after block edits
         java.util.List<ChunkPos> chunksToRemesh = chunkRenderer.getChunksNeedingRebuild(5);
         for (ChunkPos pos : chunksToRemesh) {
             chunkLoader.requestRemesh(pos.x(), pos.z());
         }
+
+        entityManager.update(dt);
+
+        if (playerController != null) {
+            playerController.update((float) dt);
+        }
+        if (blockInteractionHandler != null) {
+            blockInteractionHandler.update((float) dt);
+        }
     }
-    
+
     @Override
     public void render(double alpha) {
         // Update occlusion culling results before rendering
@@ -210,6 +239,15 @@ public class World implements Updatable, Renderable {
         
         // Render all visible chunks
         chunkRenderer.render(camera);
+
+        entityRenderer.render(alpha);
+
+        if (blockInteractionHandler != null && playerEntity != null) {
+            blockSelectionRenderer.render(
+                    blockInteractionHandler.getCurrentTarget(),
+                    playerEntity.getComponent(com.poorcraft.common.entity.component.InteractionComponent.class).getBreakProgress()
+            );
+        }
     }
     
     /**
@@ -220,6 +258,7 @@ public class World implements Updatable, Renderable {
      * @param worldZ World Z coordinate
      * @return Block ID
      */
+    @Override
     public int getBlock(int worldX, int worldY, int worldZ) {
         int chunkX = Math.floorDiv(worldX, 16);
         int chunkZ = Math.floorDiv(worldZ, 16);
@@ -241,6 +280,7 @@ public class World implements Updatable, Renderable {
      * @param worldZ World Z coordinate
      * @param blockId Block ID
      */
+    @Override
     public void setBlock(int worldX, int worldY, int worldZ, int blockId) {
         int chunkX = Math.floorDiv(worldX, 16);
         int chunkZ = Math.floorDiv(worldZ, 16);
@@ -262,6 +302,8 @@ public class World implements Updatable, Renderable {
         chunkLoader.shutdown();
         chunkRenderer.cleanup();
         blockAtlas.cleanup();
+        entityRenderer.cleanup();
+        blockSelectionRenderer.cleanup();
     }
     
     public long getSeed() {
@@ -285,5 +327,24 @@ public class World implements Updatable, Renderable {
         }
 
         return blockAtlas.getTextureIndex("air");
+    }
+
+    public EntityManager getEntityManager() {
+        return entityManager;
+    }
+
+    public Entity spawnPlayer(String name, Vector3f position) {
+        Entity entity = entityManager.createPlayer(name, new Vector3f(position));
+        entity.setWorld(this);
+        this.playerEntity = entity;
+        this.playerController = new PlayerController(entity, camera, inputManager, config);
+        this.blockInteractionHandler = new BlockInteractionHandler(entity, this, camera, inputManager, config);
+        return entity;
+    }
+
+    public Entity spawnNPC(String name, Vector3f position, String behavior) {
+        Entity entity = entityManager.createNPC(name, new Vector3f(position), behavior);
+        entity.setWorld(this);
+        return entity;
     }
 }

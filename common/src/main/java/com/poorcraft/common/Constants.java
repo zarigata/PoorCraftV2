@@ -89,6 +89,26 @@ public final class Constants {
         private Player() {}
     }
 
+    public static final class Physics {
+        public static final float GRAVITY = -32.0f;
+        public static final float TERMINAL_VELOCITY = -78.4f;
+        public static final float JUMP_VELOCITY = 10.0f;
+        public static final float GROUND_FRICTION = 0.91f;
+        public static final float AIR_FRICTION = 0.98f;
+        public static final float STEP_HEIGHT = 0.6f;
+        public static final float COLLISION_EPSILON = 0.001f;
+
+        private Physics() {}
+    }
+
+    public static final class Inventory {
+        public static final int HOTBAR_SIZE = 9;
+        public static final int INVENTORY_SIZE = 36;
+        public static final int MAX_STACK_SIZE = 64;
+
+        private Inventory() {}
+    }
+
     /**
      * Entity system constants.
      */

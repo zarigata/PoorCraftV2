@@ -1,6 +1,9 @@
 #version 330 core
 
+uniform vec4 uColor;
+
+out vec4 fragColor;
+
 void main() {
-    // Empty fragment shader for depth-only rendering
-    // No color writes - only depth testing
+    fragColor = uColor;
 }

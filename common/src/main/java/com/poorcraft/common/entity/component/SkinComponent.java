@@ -53,8 +53,4 @@ public class SkinComponent implements Component {
     public void setSlim(boolean slim) {
         this.slim = slim;
     }
-
-    public static String getDefaultSkin() {
-        return "skins/player_default.png";
-    }
 }

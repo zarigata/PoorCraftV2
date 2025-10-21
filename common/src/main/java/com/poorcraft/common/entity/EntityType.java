@@ -1,15 +1,20 @@
 package com.poorcraft.common.entity;
 
-import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 public enum EntityType {
     PLAYER(0, "player", 0.6f, 1.8f, 1.62f, false),
     NPC(1, "npc", 0.6f, 1.8f, 1.62f, true),
     MOB(2, "mob", 0.9f, 0.9f, 0.8f, true);
 
-    private static final EntityType[] LOOKUP = Arrays.stream(values())
-            .sorted((a, b) -> Integer.compare(a.id, b.id))
-            .toArray(EntityType[]::new);
+    private static final Map<Integer, EntityType> BY_ID = new HashMap<>();
+
+    static {
+        for (EntityType type : values()) {
+            BY_ID.put(type.id, type);
+        }
+    }
 
     private final int id;
     private final String name;
@@ -52,9 +57,6 @@ public enum EntityType {
     }
 
     public static EntityType getById(int id) {
-        if (id < 0 || id >= LOOKUP.length) {
-            return null;
-        }
-        return LOOKUP[id];
+        return BY_ID.get(id);
     }
 }

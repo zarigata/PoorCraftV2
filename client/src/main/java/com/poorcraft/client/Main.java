@@ -1,7 +1,21 @@
 package com.poorcraft.client;
 
+import com.poorcraft.client.input.InputManager;
 import com.poorcraft.client.render.Renderer;
+import com.poorcraft.client.render.GLInfo;
+import com.poorcraft.client.render.camera.Camera;
+import com.poorcraft.client.resource.FileWatcher;
+import com.poorcraft.client.resource.ShaderManager;
+import com.poorcraft.client.resource.TextureManager;
+import com.poorcraft.client.window.Window;
+import com.poorcraft.client.world.World;
+import com.poorcraft.common.Constants;
+import com.poorcraft.common.config.Configuration;
+import com.poorcraft.common.entity.Entity;
+import com.poorcraft.common.entity.component.InventoryComponent;
 import com.poorcraft.core.Engine;
+import org.joml.Vector3f;
+import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -10,6 +24,8 @@ import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_DISABLED;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_1;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
 
 /**
@@ -29,6 +45,7 @@ public class Main {
     private static Engine engine;
     private static Renderer renderer;
     private static World world;
+    private static Entity playerEntity;
     private static final AtomicBoolean cleanupExecuted = new AtomicBoolean(false);
     
     public static void main(String[] args) {
@@ -68,6 +85,10 @@ public class Main {
             
             // Create input manager
             inputManager = new InputManager(window.getHandle(), config);
+            window.setCursorMode(GLFW_CURSOR_DISABLED);
+            if (config.getBoolean("input.rawMouseMotion", true)) {
+                inputManager.enableRawMouseMotion(true);
+            }
             
             // Create camera
             Camera camera = new Camera();
@@ -118,7 +139,9 @@ public class Main {
             }
             
             // Create world
-            world = new World(config.getLong("world.seed", 0L), config, camera, shaderManager, textureManager);
+            world = new World(config.getLong("world.seed", 0L), config, camera, shaderManager, textureManager, inputManager);
+            playerEntity = world.spawnPlayer("TestPlayer", new Vector3f(0, 80, 5));
+            world.spawnNPC("TestNPC", new Vector3f(5, 80, 5), "idle");
             
             // Create renderer
             renderer = new Renderer(camera, shaderManager, textureManager, window);
@@ -154,6 +177,32 @@ public class Main {
                 // Check if window should close
                 if (window.shouldClose()) {
                     engine.stop();
+                }
+
+                if (playerEntity != null) {
+                    InventoryComponent inventory = playerEntity.getComponent(InventoryComponent.class);
+                    if (inventory != null) {
+                        int hotbarSize = Constants.Inventory.HOTBAR_SIZE;
+                        int currentSlot = inventory.getInventory().getSelectedSlot();
+
+                        double scrollY = inputManager.getScrollY();
+                        if (scrollY != 0.0d) {
+                            int steps = (int) Math.round(scrollY);
+                            if (steps != 0) {
+                                int newSlot = Math.floorMod(currentSlot - steps, hotbarSize);
+                                inventory.selectHotbarSlot(newSlot);
+                                currentSlot = newSlot;
+                            }
+                        }
+
+                        for (int i = 0; i < Math.min(hotbarSize, 9); i++) {
+                            int keyCode = GLFW_KEY_1 + i;
+                            if (inputManager.keyPressed(keyCode)) {
+                                inventory.selectHotbarSlot(i);
+                                break;
+                            }
+                        }
+                    }
                 }
             });
             

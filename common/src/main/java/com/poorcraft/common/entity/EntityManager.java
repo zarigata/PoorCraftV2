@@ -1,13 +1,19 @@
 package com.poorcraft.common.entity;
 
+import com.poorcraft.common.config.Configuration;
 import com.poorcraft.common.entity.behavior.BehaviorStateMachine;
 import com.poorcraft.common.entity.behavior.IdleBehavior;
 import com.poorcraft.common.entity.component.AnimationComponent;
 import com.poorcraft.common.entity.component.BehaviorComponent;
+import com.poorcraft.common.entity.component.InteractionComponent;
+import com.poorcraft.common.entity.component.InventoryComponent;
 import com.poorcraft.common.entity.component.NameComponent;
+import com.poorcraft.common.entity.component.PhysicsComponent;
 import com.poorcraft.common.entity.component.PositionComponent;
 import com.poorcraft.common.entity.component.SkinComponent;
 import com.poorcraft.common.entity.component.VelocityComponent;
+import com.poorcraft.common.physics.PhysicsEngine;
+import com.poorcraft.common.world.World;
 import com.poorcraft.common.util.ChunkPos;
 import org.joml.Vector3f;
 
@@ -27,13 +33,17 @@ public class EntityManager {
     private final Map<ChunkPos, Set<Entity>> spatialIndex;
     private final Map<UUID, BehaviorStateMachine> behaviorStateMachines;
     private final AtomicInteger nextEntityId;
+    private final Configuration config;
+    private final PhysicsEngine physicsEngine;
 
-    public EntityManager() {
+    public EntityManager(Configuration config) {
         this.entities = new ConcurrentHashMap<>();
         this.entitiesByType = new EnumMap<>(EntityType.class);
         this.spatialIndex = new ConcurrentHashMap<>();
         this.behaviorStateMachines = new ConcurrentHashMap<>();
         this.nextEntityId = new AtomicInteger();
+        this.config = config;
+        this.physicsEngine = new PhysicsEngine(config);
     }
 
     public Entity addEntity(Entity entity) {
@@ -121,14 +131,17 @@ public class EntityManager {
             if (position != null) {
                 position.updatePrevious();
             }
-            if (velocity != null) {
-                Vector3f pos = position != null ? position.getPosition() : null;
-                if (pos != null) {
-                    Vector3f vel = velocity.getVelocity();
-                    pos.add(new Vector3f(vel).mul((float) dt));
-                    position.setPosition(pos);
+            PhysicsComponent physicsComponent = entity.getComponent(PhysicsComponent.class);
+            if (physicsComponent != null && position != null && velocity != null) {
+                physicsEngine.applyGravity(velocity, position.isOnGround(), (float) dt);
+                Object worldObj = entity.getWorld();
+                if (worldObj instanceof World world) {
+                    physicsEngine.resolveCollisions(entity, world, (float) dt);
+                    refreshChunkBucket(entity, position);
                 }
-                velocity.applyDrag();
+                physicsEngine.applyFriction(velocity, position.isOnGround());
+            }
+            if (velocity != null) {
                 velocity.clampSpeed();
             }
             AnimationComponent animation = entity.getComponent(AnimationComponent.class);
@@ -148,13 +161,36 @@ public class EntityManager {
         }
     }
 
+    private void refreshChunkBucket(Entity entity, PositionComponent position) {
+        if (position == null) {
+            return;
+        }
+        Vector3f previous = position.getPreviousPosition();
+        Vector3f current = position.getPosition();
+        ChunkPos prevChunk = ChunkPos.fromWorldPos(previous.x, previous.z);
+        ChunkPos nextChunk = ChunkPos.fromWorldPos(current.x, current.z);
+        if (prevChunk.equals(nextChunk)) {
+            return;
+        }
+        Set<Entity> prevSet = spatialIndex.get(prevChunk);
+        if (prevSet != null) {
+            prevSet.remove(entity);
+        }
+        spatialIndex.computeIfAbsent(nextChunk, ignored -> ConcurrentHashMap.newKeySet()).add(entity);
+    }
+
     public Entity createPlayer(String name, Vector3f position) {
         Entity entity = new Entity(EntityType.PLAYER);
         entity.addComponent(new PositionComponent(position));
         entity.addComponent(new VelocityComponent());
-        entity.addComponent(new SkinComponent(SkinComponent.getDefaultSkin()));
+        entity.addComponent(new PhysicsComponent());
+        entity.addComponent(new SkinComponent(
+                config.getString("entity.defaultPlayerSkin", "skins/player_default.png")
+        ));
         entity.addComponent(new NameComponent(name));
         entity.addComponent(new AnimationComponent());
+        entity.addComponent(new InteractionComponent());
+        entity.addComponent(new InventoryComponent());
         addEntity(entity);
         return entity;
     }
@@ -163,7 +199,9 @@ public class EntityManager {
         Entity entity = new Entity(EntityType.NPC);
         entity.addComponent(new PositionComponent(position));
         entity.addComponent(new VelocityComponent());
-        entity.addComponent(new SkinComponent("skins/npc_villager.png"));
+        entity.addComponent(new SkinComponent(
+                config.getString("entity.defaultNPCSkin", "skins/npc_villager.png")
+        ));
         entity.addComponent(new NameComponent(name));
         entity.addComponent(new AnimationComponent());
         BehaviorComponent behavior = new BehaviorComponent(behaviorType);

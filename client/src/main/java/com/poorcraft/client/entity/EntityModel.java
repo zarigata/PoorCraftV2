@@ -30,27 +30,100 @@ public class EntityModel {
     private final IntBuffer indices;
     private final int vertexCount;
     private final int indexCount;
+    private final int textureResolution;
     private int vao;
     private int vbo;
     private int ebo;
     private boolean uploaded;
 
-    private EntityModel(FloatBuffer vertices, IntBuffer indices, int vertexCount, int indexCount) {
+    private EntityModel(FloatBuffer vertices, IntBuffer indices, int vertexCount, int indexCount, int textureResolution) {
         this.vertices = vertices;
         this.indices = indices;
         this.vertexCount = vertexCount;
         this.indexCount = indexCount;
+        this.textureResolution = textureResolution;
     }
 
     public static EntityModel buildPlayerModel() {
-        ModelBuilder builder = new ModelBuilder();
-        builder.addBox(new Vector3f(-4, 0, -2), new Vector3f(4, 12, 2), new UVRegion(16, 16, 8, 12));
-        builder.addBox(new Vector3f(-4, 12, -4), new Vector3f(4, 20, 4), new UVRegion(0, 0, 8, 8));
-        builder.addBox(new Vector3f(-8, 0, -2), new Vector3f(-4, 12, 2), new UVRegion(40, 16, 4, 12));
-        builder.addBox(new Vector3f(4, 0, -2), new Vector3f(8, 12, 2), new UVRegion(32, 48, 4, 12));
-        builder.addBox(new Vector3f(-4, -12, -2), new Vector3f(0, 0, 2), new UVRegion(0, 16, 4, 12));
-        builder.addBox(new Vector3f(0, -12, -2), new Vector3f(4, 0, 2), new UVRegion(16, 48, 4, 12));
+        return buildPlayerModel(32);
+    }
+
+    public static EntityModel buildPlayerModel(int textureResolution) {
+        ModelBuilder builder = new ModelBuilder(textureResolution);
+
+        builder.addBox(
+                new Vector3f(-4, 12, -4),
+                new Vector3f(4, 20, 4),
+                UVFaces.of(
+                        new UVRegion(8, 8, 8, 8),   // front
+                        new UVRegion(24, 8, 8, 8),  // back
+                        new UVRegion(16, 8, 8, 8),  // left
+                        new UVRegion(0, 8, 8, 8),   // right
+                        new UVRegion(8, 0, 8, 8),   // top
+                        new UVRegion(16, 0, 8, 8)   // bottom
+                )
+        );
+
+        builder.addBox(
+                new Vector3f(-4, 0, -2),
+                new Vector3f(4, 12, 2),
+                UVFaces.of(
+                        new UVRegion(8, 20, 8, 12),   // front
+                        new UVRegion(20, 20, 8, 12),  // back
+                        new UVRegion(16, 20, 4, 12),  // left
+                        new UVRegion(4, 20, 4, 12),   // right
+                        new UVRegion(8, 16, 8, 4),    // top
+                        new UVRegion(16, 16, 8, 4)    // bottom
+                )
+        );
+
+        UVFaces armFaces = UVFaces.of(
+                new UVRegion(20, 20, 4, 12),  // front
+                new UVRegion(28, 20, 4, 12),  // back
+                new UVRegion(16, 20, 4, 12),  // left
+                new UVRegion(24, 20, 4, 12),  // right
+                new UVRegion(20, 16, 4, 4),   // top
+                new UVRegion(24, 16, 4, 4)    // bottom
+        );
+
+        builder.addBox(
+                new Vector3f(4, 0, -2),
+                new Vector3f(8, 12, 2),
+                armFaces
+        );
+
+        builder.addBox(
+                new Vector3f(-8, 0, -2),
+                new Vector3f(-4, 12, 2),
+                armFaces
+        );
+
+        UVFaces legFaces = UVFaces.of(
+                new UVRegion(4, 20, 4, 12),   // front
+                new UVRegion(12, 20, 4, 12),  // back
+                new UVRegion(0, 20, 4, 12),   // left
+                new UVRegion(8, 20, 4, 12),   // right
+                new UVRegion(4, 16, 4, 4),    // top
+                new UVRegion(8, 16, 4, 4)     // bottom
+        );
+
+        builder.addBox(
+                new Vector3f(0, -12, -2),
+                new Vector3f(4, 0, 2),
+                legFaces
+        );
+
+        builder.addBox(
+                new Vector3f(-4, -12, -2),
+                new Vector3f(0, 0, 2),
+                legFaces
+        );
+
         return builder.build();
+    }
+
+    public int getTextureResolution() {
+        return textureResolution;
     }
 
     public void upload() {
@@ -119,15 +192,17 @@ public class EntityModel {
         private final IntBuffer indices;
         private int vertexOffset;
         private int indexOffset;
+        private final float textureResolution;
 
-        ModelBuilder() {
+        ModelBuilder(int textureResolution) {
             vertices = BufferUtils.createFloatBuffer(4096);
             indices = BufferUtils.createIntBuffer(4096);
             vertexOffset = 0;
             indexOffset = 0;
+            this.textureResolution = textureResolution;
         }
 
-        void addBox(Vector3f min, Vector3f max, UVRegion uv) {
+        void addBox(Vector3f min, Vector3f max, UVFaces facesUV) {
             int[][] faces = {
                     {0, 1, 2, 3},
                     {4, 5, 6, 7},
@@ -148,12 +223,25 @@ public class EntityModel {
                     new Vector3f(min.x, max.y, min.z)
             };
 
-            float[][] uvCoords = {
-                    {uv.u, uv.v}, {uv.u + uv.w, uv.v},
-                    {uv.u + uv.w, uv.v + uv.h}, {uv.u, uv.v + uv.h}
+            UVRegion[] regions = {
+                    facesUV.front(),
+                    facesUV.back(),
+                    facesUV.left(),
+                    facesUV.right(),
+                    facesUV.top(),
+                    facesUV.bottom()
             };
 
-            for (int[] face : faces) {
+            for (int faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+                int[] face = faces[faceIndex];
+                UVRegion region = regions[faceIndex];
+                float[][] uvCoords = {
+                        {region.u, region.v},
+                        {region.u + region.w, region.v},
+                        {region.u + region.w, region.v + region.h},
+                        {region.u, region.v + region.h}
+                };
+
                 Vector3f v0 = corners[face[0]];
                 Vector3f v1 = corners[face[1]];
                 Vector3f v2 = corners[face[2]];
@@ -166,7 +254,7 @@ public class EntityModel {
                     Vector3f vertex = corners[face[i]];
                     float[] uvCoord = uvCoords[i];
                     vertices.put(vertex.x / 16.0f).put(vertex.y / 16.0f).put(vertex.z / 16.0f);
-                    vertices.put(uvCoord[0] / 64.0f).put(uvCoord[1] / 64.0f);
+                    vertices.put(uvCoord[0] / textureResolution).put(uvCoord[1] / textureResolution);
                     vertices.put(normal.x).put(normal.y).put(normal.z);
                 }
 
@@ -180,7 +268,7 @@ public class EntityModel {
         EntityModel build() {
             vertices.flip();
             indices.flip();
-            return new EntityModel(vertices, indices, vertexOffset, indexOffset);
+            return new EntityModel(vertices, indices, vertexOffset, indexOffset, (int) textureResolution);
         }
     }
 
@@ -195,6 +283,52 @@ public class EntityModel {
             this.v = v;
             this.w = w;
             this.h = h;
+        }
+    }
+
+    private static class UVFaces {
+        private final UVRegion front;
+        private final UVRegion back;
+        private final UVRegion left;
+        private final UVRegion right;
+        private final UVRegion top;
+        private final UVRegion bottom;
+
+        private UVFaces(UVRegion front, UVRegion back, UVRegion left, UVRegion right, UVRegion top, UVRegion bottom) {
+            this.front = front;
+            this.back = back;
+            this.left = left;
+            this.right = right;
+            this.top = top;
+            this.bottom = bottom;
+        }
+
+        static UVFaces of(UVRegion front, UVRegion back, UVRegion left, UVRegion right, UVRegion top, UVRegion bottom) {
+            return new UVFaces(front, back, left, right, top, bottom);
+        }
+
+        UVRegion front() {
+            return front;
+        }
+
+        UVRegion back() {
+            return back;
+        }
+
+        UVRegion left() {
+            return left;
+        }
+
+        UVRegion right() {
+            return right;
+        }
+
+        UVRegion top() {
+            return top;
+        }
+
+        UVRegion bottom() {
+            return bottom;
         }
     }
 }
