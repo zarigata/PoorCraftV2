@@ -1,21 +1,15 @@
 package com.poorcraft.client;
 
-import com.poorcraft.client.input.InputManager;
-import com.poorcraft.client.render.Renderer;
-import com.poorcraft.client.render.GLInfo;
-import com.poorcraft.client.render.camera.Camera;
-import com.poorcraft.client.resource.FileWatcher;
-import com.poorcraft.client.resource.ShaderManager;
-import com.poorcraft.client.resource.TextureManager;
-import com.poorcraft.client.window.Window;
-import com.poorcraft.client.world.World;
-import com.poorcraft.common.Constants;
-import com.poorcraft.common.config.Configuration;
-import com.poorcraft.common.entity.Entity;
-import com.poorcraft.common.entity.component.InventoryComponent;
-import com.poorcraft.core.Engine;
-import org.joml.Vector3f;
-import org.slf4j.Logger;
+import com.poorcraft.client.mod.ClientModManager;
+import com.poorcraft.client.network.ClientNetworkManager;
+import com.poorcraft.client.network.handler.ModDataHandler;
+import com.poorcraft.client.network.handler.ModListHandler;
+import com.poorcraft.client.ui.ConnectionUI;
+import com.poorcraft.client.ui.ServerBrowserUI;
+import com.poorcraft.common.event.EventBus;
+import com.poorcraft.common.registry.RegistryManager;
+import com.poorcraft.common.registry.Registries;
+import com.poorcraft.api.ModAPI;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -40,12 +34,16 @@ public class Main {
     private static InputManager inputManager;
     private static ShaderManager shaderManager;
     private static TextureManager textureManager;
+    private static EventBus eventBus;
+    private static RegistryManager registryManager;
+    private static ClientModManager modManager;
     private static FileWatcher shaderWatcher;
     private static FileWatcher textureWatcher;
     private static Engine engine;
     private static Renderer renderer;
     private static World world;
     private static Entity playerEntity;
+    private static ClientNetworkManager networkManager;
     private static final AtomicBoolean cleanupExecuted = new AtomicBoolean(false);
     
     public static void main(String[] args) {
@@ -76,9 +74,51 @@ public class Main {
             
             LOGGER.info("Client starting...");
             
-            // Create window and OpenGL context
-            window = new Window(config);
-            
+            // Initialize mod infrastructure before any world construction
+            eventBus = new EventBus();
+            registryManager = new RegistryManager();
+            Registries.init();
+            ModAPI.initialize(eventBus, registryManager);
+
+            // Check for multiplayer argument
+            boolean multiplayer = args.length > 0 && "--multiplayer".equals(args[0]);
+
+            if (multiplayer) {
+                // Multiplayer mode - create network manager first
+                networkManager = new ClientNetworkManager(config);
+                networkManager.init();
+                modManager = new ClientModManager(config, eventBus, registryManager, networkManager);
+                networkManager.registerHandler(
+                    com.poorcraft.common.network.packet.ModListPacket.class,
+                    new ModListHandler(modManager, networkManager));
+                networkManager.registerHandler(
+                    com.poorcraft.common.network.packet.ModDataPacket.class,
+                    new ModDataHandler(modManager));
+
+                // Show server browser UI (placeholder implementation)
+                LOGGER.info("Starting in multiplayer mode");
+                ServerBrowserUI serverBrowser = new ServerBrowserUI(config, networkManager);
+                String selectedServer = serverBrowser.showAndGetSelection();
+                
+                if (selectedServer != null) {
+                    // Connect to selected server
+                    ConnectionUI connectionUI = new ConnectionUI(networkManager);
+                    if (connectionUI.connect(selectedServer)) {
+                        LOGGER.info("Connected to server successfully");
+                    } else {
+                        LOGGER.error("Failed to connect to server");
+                        System.exit(1);
+                    }
+                } else {
+                    LOGGER.info("No server selected, exiting");
+                    System.exit(0);
+                }
+            } else {
+                modManager = new ClientModManager(config, eventBus, registryManager, null);
+                modManager.init();
+                registryManager.freezeAll();
+            }
+
             // Detect and log OpenGL capabilities
             GLInfo capabilities = new GLInfo();
             capabilities.printCapabilities();
@@ -139,7 +179,7 @@ public class Main {
             }
             
             // Create world
-            world = new World(config.getLong("world.seed", 0L), config, camera, shaderManager, textureManager, inputManager);
+            world = new World(config.getLong("world.seed", 0L), config, camera, shaderManager, textureManager, inputManager, networkManager);
             playerEntity = world.spawnPlayer("TestPlayer", new Vector3f(0, 80, 5));
             world.spawnNPC("TestNPC", new Vector3f(5, 80, 5), "idle");
             
@@ -287,6 +327,9 @@ public class Main {
         // Guard against double cleanup
         if (!cleanupExecuted.compareAndSet(false, true)) {
             return;
+        }
+        if (networkManager != null) {
+            networkManager.disconnect();
         }
         if (world != null) {
             world.cleanup();

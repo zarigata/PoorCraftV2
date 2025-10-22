@@ -1,24 +1,20 @@
 package com.poorcraft.client.world;
 
-import com.poorcraft.client.entity.EntityRenderer;
-import com.poorcraft.client.player.BlockInteractionHandler;
-import com.poorcraft.client.player.PlayerController;
-import com.poorcraft.client.render.BlockSelectionRenderer;
-import com.poorcraft.client.render.camera.Camera;
-import com.poorcraft.client.render.shader.ShaderProgram;
-import com.poorcraft.client.render.texture.TextureAtlas;
-import com.poorcraft.client.resource.ShaderManager;
-import com.poorcraft.client.resource.TextureManager;
-import com.poorcraft.client.input.InputManager;
-import com.poorcraft.common.config.Configuration;
-import com.poorcraft.common.entity.Entity;
-import com.poorcraft.common.entity.EntityManager;
-import com.poorcraft.common.util.ChunkPos;
-import com.poorcraft.common.world.gen.TerrainGenerator;
-import com.poorcraft.core.Renderable;
-import com.poorcraft.core.Updatable;
-import org.joml.Vector3f;
-import org.slf4j.Logger;
+import com.poorcraft.client.network.ClientNetworkManager;
+import com.poorcraft.api.ModAPI;
+import com.poorcraft.api.event.block.BlockBreakEvent;
+import com.poorcraft.api.event.block.BlockPlaceEvent;
+import com.poorcraft.client.network.handler.BlockUpdateHandler;
+import com.poorcraft.client.network.handler.ChunkDataHandler;
+import com.poorcraft.client.network.handler.DisconnectHandler;
+import com.poorcraft.client.network.handler.EntityUpdateHandler;
+import com.poorcraft.client.network.handler.KeepAliveHandler;
+import com.poorcraft.client.network.handler.LoginSuccessHandler;
+import com.poorcraft.common.event.EventBus;
+import com.poorcraft.common.inventory.ItemStack;
+import com.poorcraft.common.world.block.BlockType;
+import com.poorcraft.common.world.chunk.Chunk;
+import com.poorcraft.common.world.chunk.ChunkCodec;
 
 import java.awt.HeadlessException;
 import java.io.IOException;
@@ -26,6 +22,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -49,6 +46,8 @@ public class World implements Updatable, Renderable, com.poorcraft.common.world.
     private final EntityRenderer entityRenderer;
     private final InputManager inputManager;
     private final BlockSelectionRenderer blockSelectionRenderer;
+    private final ClientNetworkManager networkManager;
+    private final EventBus eventBus;
     private Entity playerEntity;
     private PlayerController playerController;
     private BlockInteractionHandler blockInteractionHandler;
@@ -61,13 +60,18 @@ public class World implements Updatable, Renderable, com.poorcraft.common.world.
      * @param camera Camera for rendering
      * @param shaderManager Shader manager
      * @param textureManager Texture manager
+     * @param inputManager Input manager
+     * @param networkManager Network manager (can be null for singleplayer)
      */
     public World(long seed, Configuration config, Camera camera,
-                 ShaderManager shaderManager, TextureManager textureManager, InputManager inputManager) {
+                 ShaderManager shaderManager, TextureManager textureManager,
+                 InputManager inputManager, ClientNetworkManager networkManager) {
         this.seed = seed;
         this.config = config;
         this.camera = camera;
         this.inputManager = inputManager;
+        this.networkManager = networkManager;
+        this.eventBus = ModAPI.getEventBus();
         
         LOGGER.info("Initializing world with seed: {}", seed);
         
@@ -95,6 +99,13 @@ public class World implements Updatable, Renderable, com.poorcraft.common.world.
         this.entityManager = new EntityManager(config);
         this.entityRenderer = new EntityRenderer(entityManager, camera, shaderManager, textureManager, config);
         this.blockSelectionRenderer = new BlockSelectionRenderer(camera, shaderManager);
+
+        // Initialize network manager if provided
+        if (networkManager != null) {
+            networkManager.init();
+            registerNetworkHandlers(networkManager);
+            LOGGER.info("Network manager initialized for multiplayer");
+        }
 
         LOGGER.info("World initialized successfully");
     }
@@ -222,6 +233,11 @@ public class World implements Updatable, Renderable, com.poorcraft.common.world.
             chunkLoader.requestRemesh(pos.x(), pos.z());
         }
 
+        // Update networking if enabled
+        if (networkManager != null) {
+            networkManager.tick();
+        }
+
         entityManager.update(dt);
 
         if (playerController != null) {
@@ -286,24 +302,78 @@ public class World implements Updatable, Renderable, com.poorcraft.common.world.
         int chunkZ = Math.floorDiv(worldZ, 16);
         int localX = Math.floorMod(worldX, 16);
         int localZ = Math.floorMod(worldZ, 16);
-        
-        var chunk = chunkLoader.getChunk(chunkX, chunkZ);
-        if (chunk != null) {
-            chunk.setBlock(localX, worldY, localZ, blockId);
-            chunkRenderer.markForRebuild(chunkX, chunkZ);
+
+        Chunk chunk = chunkLoader.getChunk(chunkX, chunkZ);
+        if (chunk == null) {
+            return;
+        }
+
+        int currentBlockId = chunk.getBlock(localX, worldY, localZ);
+        if (currentBlockId == blockId) {
+            return;
+        }
+
+        if (eventBus != null) {
+            boolean singleplayer = networkManager == null;
+            if (blockId == BlockType.AIR.getId()) {
+                BlockBreakEvent event = new BlockBreakEvent(this, worldX, worldY, worldZ, currentBlockId, null, Collections.emptyList());
+                eventBus.post(event);
+                if (singleplayer && event.isCancelled()) {
+                    return;
+                }
+                blockId = BlockType.AIR.getId();
+            } else {
+                BlockPlaceEvent event = new BlockPlaceEvent(this, worldX, worldY, worldZ, blockId, null, ItemStack.EMPTY);
+                eventBus.post(event);
+                if (singleplayer) {
+                    if (event.isCancelled()) {
+                        return;
+                    }
+                    blockId = event.getBlockId();
+                }
+            }
+        }
+
+        chunk.setBlock(localX, worldY, localZ, blockId);
+        chunkRenderer.markForRebuild(chunkX, chunkZ);
+    }
+
+    public void addNetworkChunk(int chunkX, int chunkZ, byte[] data) {
+        try {
+            Chunk chunk = ChunkCodec.decodeFullChunk(data);
+            if (chunk.getChunkX() != chunkX || chunk.getChunkZ() != chunkZ) {
+                LOGGER.warn("Chunk payload coordinates ({}, {}) did not match header ({}, {})",
+                    chunk.getChunkX(), chunk.getChunkZ(), chunkX, chunkZ);
+            }
+            chunkLoader.putChunk(chunk);
+            chunkRenderer.markForRebuild(chunk.getChunkX(), chunk.getChunkZ());
+        } catch (Exception e) {
+            LOGGER.error("Failed to install network chunk ({}, {})", chunkX, chunkZ, e);
         }
     }
     
     /**
-     * Cleans up world resources.
+     * Registers network packet handlers.
+     *
+     * @param networkManager the network manager
      */
-    public void cleanup() {
-        LOGGER.info("Cleaning up world");
-        chunkLoader.shutdown();
-        chunkRenderer.cleanup();
-        blockAtlas.cleanup();
-        entityRenderer.cleanup();
-        blockSelectionRenderer.cleanup();
+    private void registerNetworkHandlers(ClientNetworkManager networkManager) {
+        EntityUpdateHandler entityHandler = new EntityUpdateHandler(this, entityManager);
+
+        networkManager.registerHandler(com.poorcraft.common.network.packet.LoginSuccessPacket.class,
+            new LoginSuccessHandler());
+        networkManager.registerHandler(com.poorcraft.common.network.packet.ChunkDataPacket.class,
+            new ChunkDataHandler(this));
+        networkManager.registerHandler(com.poorcraft.common.network.packet.BlockUpdatePacket.class,
+            new BlockUpdateHandler(this));
+        networkManager.registerHandler(com.poorcraft.common.network.packet.EntitySpawnPacket.class, entityHandler);
+        networkManager.registerHandler(com.poorcraft.common.network.packet.EntityPositionPacket.class, entityHandler);
+        networkManager.registerHandler(com.poorcraft.common.network.packet.EntityVelocityPacket.class, entityHandler);
+        networkManager.registerHandler(com.poorcraft.common.network.packet.EntityRemovePacket.class, entityHandler);
+        networkManager.registerHandler(com.poorcraft.common.network.packet.KeepAlivePacket.class,
+            new KeepAliveHandler());
+        networkManager.registerHandler(com.poorcraft.common.network.packet.DisconnectPacket.class,
+            new DisconnectHandler());
     }
     
     public long getSeed() {
@@ -337,8 +407,8 @@ public class World implements Updatable, Renderable, com.poorcraft.common.world.
         Entity entity = entityManager.createPlayer(name, new Vector3f(position));
         entity.setWorld(this);
         this.playerEntity = entity;
-        this.playerController = new PlayerController(entity, camera, inputManager, config);
-        this.blockInteractionHandler = new BlockInteractionHandler(entity, this, camera, inputManager, config);
+        this.playerController = new PlayerController(entity, camera, inputManager, config, networkManager);
+        this.blockInteractionHandler = new BlockInteractionHandler(entity, this, camera, inputManager, config, networkManager);
         return entity;
     }
 

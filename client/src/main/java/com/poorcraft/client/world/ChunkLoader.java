@@ -232,7 +232,23 @@ public class ChunkLoader {
     public Chunk getChunk(int chunkX, int chunkZ) {
         return loadedChunks.get(new ChunkPos(chunkX, chunkZ));
     }
-    
+
+    /**
+     * Installs or replaces a chunk from an external source (e.g. network).
+     *
+     * @param chunk Chunk data to store
+     */
+    public void putChunk(Chunk chunk) {
+        if (chunk == null) {
+            return;
+        }
+
+        ChunkPos pos = new ChunkPos(chunk.getChunkX(), chunk.getChunkZ());
+        loadedChunks.put(pos, chunk);
+        pendingMeshes.remove(pos);
+        meshingQueue.offer(chunk);
+    }
+
     /**
      * Requests a chunk to be re-meshed after block edits.
      * 

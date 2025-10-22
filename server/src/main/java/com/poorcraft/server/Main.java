@@ -28,32 +28,30 @@ public class Main {
     public static void main(String[] args) {
         LOGGER.info("=== {} Server v{} ===", Constants.Game.NAME, Constants.Game.VERSION);
         LOGGER.info("Java Version: {}", System.getProperty("java.version"));
-        LOGGER.info("OS: {} {} ({})", 
+        LOGGER.info("OS: {} {} ({})",
             System.getProperty("os.name"),
             System.getProperty("os.version"),
             System.getProperty("os.arch")
         );
-        
+
         // Parse command line arguments
         ServerConfig serverConfig = parseArguments(args);
-        
+
         // Add shutdown hook for graceful cleanup
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOGGER.info("Shutting down server...");
-            // TODO Phase 5: Save world
-            // TODO Phase 5: Disconnect all players
-            // TODO Phase 5: Shutdown Netty
+            // GameServer will handle cleanup
         }, "Shutdown-Hook"));
-        
+
         try {
             // Ensure config directory exists and copy default config if needed
             Path configDir = Paths.get("config");
             Path serverConfigPath = configDir.resolve("server.yml");
-            
+
             if (!Files.exists(configDir)) {
                 Files.createDirectories(configDir);
             }
-            
+
             if (!Files.exists(serverConfigPath)) {
                 LOGGER.info("Server configuration not found, creating default config at {}", serverConfigPath);
                 try (InputStream defaultConfig = Main.class.getResourceAsStream("/server-config.yml")) {
@@ -67,7 +65,7 @@ public class Main {
                     LOGGER.warn("Could not copy default server configuration", e);
                 }
             }
-            
+
             // Load server configuration
             Configuration config;
             try {
@@ -76,32 +74,39 @@ public class Main {
                 LOGGER.warn("Could not load server configuration, using defaults", e);
                 config = new Configuration();
             }
-            
+
             // Get server port from config or command line
-            int port = serverConfig.port != -1 ? 
-                serverConfig.port : 
+            int port = serverConfig.port != -1 ?
+                serverConfig.port :
                 config.getInt("network.serverPort", Constants.Network.DEFAULT_SERVER_PORT);
-            
+
             LOGGER.info("Server starting on port {}...", port);
-            
-            // TODO Phase 5: Initialize Netty server
-            // TODO Phase 5: Load world
-            // TODO Phase 5: Start server tick loop
-            // TODO Phase 5: Initialize console
-            
+
+            // Create and initialize game server
+            GameServer gameServer = new GameServer(config);
+            gameServer.init();
+
+            // Start game server (this will run the tick loop)
+            gameServer.start();
+
             LOGGER.info("Server initialization complete");
-            LOGGER.info("Press Ctrl+C to stop (server loop not yet implemented)");
-            
-            // Placeholder: Keep application running
-            // In Phase 5, this will be replaced by the server tick loop
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            LOGGER.info("Press Ctrl+C to stop");
+
+            // Keep main thread alive while server is running
+            while (gameServer.isRunning()) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
-            
+
+            // Stop game server
+            gameServer.stop();
+
             LOGGER.info("Server stopped");
-            
+
         } catch (Exception e) {
             LOGGER.error("Fatal error in server", e);
             System.exit(1);

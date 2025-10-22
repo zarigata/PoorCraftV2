@@ -10,6 +10,9 @@ dependencies {
     
     // Utilities
     implementation "org.apache.commons:commons-lang3:${commonsLang3Version}"
+
+    // Lua scripting
+    implementation "org.luaj:luaj-jse:${luajVersion}"
 }
 
 jar {

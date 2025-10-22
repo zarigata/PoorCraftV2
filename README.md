@@ -4,22 +4,16 @@ An open-source Minecraft clone built with Java and LWJGL, featuring multiplayer 
 
 ## Features
 
-### Current (Phase 1)
+### Current (Phase 1-5)
 - Multi-module Gradle project structure
 - Cross-platform build system (Windows, Linux, macOS)
 - Logging framework (SLF4J + Log4j2)
 - Configuration management (YAML-based)
 - Mod API foundation
-
-### Planned
-- **Rendering**: OpenGL-based voxel rendering with chunk optimization
-- **World Generation**: 5 unique biomes with procedural generation
-- **Multiplayer**: Dedicated server with Netty-based networking
-- **Player System**: 32x32 custom skins, inventory, crafting
-- **Ray Tracing**: Optional RT support for modern GPUs
-- **Modding**: Lua and Java mod support with hot-reloading
-- **Integrations**: Steam Workshop, Discord Rich Presence
-- **Cross-Platform**: Native installers for Windows, Linux, and macOS
+- **Networking**: Complete client-server networking with Netty
+- **World System**: Authoritative server world with chunk streaming
+- **Player Management**: Player sessions and entity synchronization
+- **Multiplayer**: Dedicated server and client-server protocol
 
 ## Requirements
 
@@ -58,10 +52,68 @@ cd poorcraft
 ### Run Tests
 
 ```bash
-./gradlew test
+## Multiplayer
+
+### Running the Server
+
+Start the dedicated server:
+
+```bash
+./gradlew :server:run
 ```
 
-## Project Structure
+**Command Line Options:**
+- `--port <port>`: Set server port (default: 25565)
+- `--world <name>`: Set world name (default: world)
+
+**Configuration:**
+The server reads configuration from `config/server.yml`. Key settings:
+- `network.serverPort`: Server port
+- `network.maxPlayers`: Maximum concurrent players
+- `network.enableCompression`: Enable packet compression
+- `world.seed`: World seed for generation
+
+### Connecting from Client
+
+Run the client in multiplayer mode:
+
+```bash
+./gradlew :client:run --args="--multiplayer"
+```
+
+The client will:
+1. Show a server browser (currently uses default server from config)
+2. Connect to the selected server
+3. Prompt for username
+4. Attempt login and join the game
+
+**Configuration:**
+Client configuration in `config/client.yml`:
+- `multiplayer.defaultServerAddress`: Default server to connect to
+- `multiplayer.defaultServerPort`: Default server port
+- `network.clientThreads`: Number of Netty client threads
+
+### Protocol Features
+
+- **Connection States**: HANDSHAKE → LOGIN → PLAY
+- **Packet System**: Bi-directional with ID-based routing
+- **Compression**: Optional Zlib compression above threshold
+- **Keep-Alive**: Automatic connection health monitoring
+- **Chunk Streaming**: Efficient world data transmission
+- **Entity Sync**: Server-authoritative entity positions
+- **Block Updates**: Real-time world state synchronization
+
+### Troubleshooting
+
+**Connection Issues:**
+- Ensure server port is not blocked by firewall
+- Check that server is running and accessible
+- Verify protocol version compatibility
+
+**Performance Issues:**
+- Adjust `network.compressionThreshold` for better bandwidth usage
+- Modify `world.viewDistance` for client performance
+- Monitor server logs for bottlenecks
 
 ```
 poorcraft/
@@ -85,6 +137,7 @@ Contains shared code used by both client and server:
 - Game constants
 - Data structures
 - Serialization
+- **Networking**: Packet system, utilities, and registry
 
 ### core
 Game engine foundation:
@@ -100,6 +153,7 @@ Game client application:
 - UI and menus (Phase 4)
 - Input handling (Phase 2)
 - Audio system (Phase 8)
+- **Networking**: Client connection management and packet handlers
 
 ### server
 Dedicated server application:
@@ -108,6 +162,7 @@ Dedicated server application:
 - Player management (Phase 4)
 - Server console (Phase 5)
 - Server tick loop (Phase 5)
+- **World System**: Authoritative world with chunk management
 
 ### modapi
 Public API for mod developers:
@@ -213,8 +268,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 - [Modding Guide](modapi/README.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
 
-## Roadmap
-
 ### Phase 1: Foundation ✓
 - Multi-module Gradle project
 - Build system and distribution
@@ -239,7 +292,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 - Inventory system
 - Basic UI
 
-### Phase 5: Networking
+### Phase 5: Networking ✓
 - Netty server implementation
 - Client-server protocol
 - Player synchronization
