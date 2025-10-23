@@ -72,6 +72,8 @@ public class GameServer {
         try {
             worldManager.loadWorlds();
             networkManager.init();
+            networkManager.registerHandler(com.poorcraft.common.network.packet.ChatMessagePacket.class,
+                new com.poorcraft.server.network.handler.ChatMessageHandler(this));
             modManager.init();
             registryManager.freezeAll();
         } catch (Exception e) {

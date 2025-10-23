@@ -42,7 +42,7 @@ public class BlockInteractionHandler {
     private final Configuration config;
     private final ClientNetworkManager networkManager;
 
-    private RaycastResult currentTarget = RaycastResult.MISS;
+    private boolean enabled = true;
 
     public BlockInteractionHandler(Entity player, World world, Camera camera, InputManager input, Configuration config, ClientNetworkManager networkManager) {
         this.player = player;
@@ -54,6 +54,10 @@ public class BlockInteractionHandler {
     }
 
     public void update(float dt) {
+        if (!enabled) {
+            return;
+        }
+
         InteractionComponent interaction = player.getComponent(InteractionComponent.class);
         InventoryComponent inventory = player.getComponent(InventoryComponent.class);
         PositionComponent position = player.getPosition();
@@ -224,5 +228,13 @@ public class BlockInteractionHandler {
 
     public RaycastResult getCurrentTarget() {
         return currentTarget;
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
 }

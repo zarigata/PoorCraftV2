@@ -4,7 +4,7 @@ An open-source Minecraft clone built with Java and LWJGL, featuring multiplayer 
 
 ## Features
 
-### Current (Phase 1-5)
+### Current (Phase 1-9)
 - Multi-module Gradle project structure
 - Cross-platform build system (Windows, Linux, macOS)
 - Logging framework (SLF4J + Log4j2)
@@ -14,6 +14,7 @@ An open-source Minecraft clone built with Java and LWJGL, featuring multiplayer 
 - **World System**: Authoritative server world with chunk streaming
 - **Player Management**: Player sessions and entity synchronization
 - **Multiplayer**: Dedicated server and client-server protocol
+- ✓ **Phase 9**: Initial compilation and runtime testing complete
 
 ## Requirements
 
@@ -22,7 +23,12 @@ An open-source Minecraft clone built with Java and LWJGL, featuring multiplayer 
 - **OS**: Windows 10+, Linux (Ubuntu 20.04+), macOS 10.14+
 - **GPU**: OpenGL 3.3+ capable graphics card
 
-## Building
+## Building and Running
+
+### Prerequisites
+- **Java 21+** (JDK 17+ supported)
+- **Gradle 8.5+** (included via wrapper)
+- **OpenGL 3.3+** capable GPU with up-to-date drivers
 
 ### Clone the Repository
 
@@ -31,25 +37,70 @@ git clone https://github.com/yourusername/poorcraft.git
 cd poorcraft
 ```
 
-### Build All Modules
+### Building
 
+**Compile all modules:**
 ```bash
 ./gradlew build
 ```
 
-### Run the Client
+**Create client JAR:**
+```bash
+./gradlew :client:jar
+```
 
+**Create server JAR:**
+```bash
+./gradlew :server:jar
+```
+
+### Running Client
+
+**Singleplayer mode:**
 ```bash
 ./gradlew :client:run
 ```
 
-### Run the Server
+**Multiplayer mode:**
+```bash
+./gradlew :client:run --args='--multiplayer'
+```
 
+### Running Server
+
+**Start dedicated server:**
 ```bash
 ./gradlew :server:run
 ```
 
-### Run Tests
+Default port: 25565
+
+### Testing
+
+**Run all unit tests:**
+```bash
+./gradlew test
+```
+
+See [TESTING.md](TESTING.md) for comprehensive testing guide.
+
+### Common Issues
+
+**OpenGL errors:**
+- Check GPU drivers are up to date
+- Verify OpenGL 3.3+ support
+
+**Textures missing:**
+- Run: `python scripts/generate_placeholder_textures.py`
+- Check `client/src/main/resources/textures/` exists
+
+**Font errors:**
+- Run: `bash scripts/download_font.sh`
+- Verify `fonts/default.ttf` exists
+
+**Configuration errors:**
+- Check `config/` directory is writable
+- Delete config files to regenerate defaults
 
 ```bash
 ## Multiplayer
@@ -203,6 +254,35 @@ Public API for mod developers:
 Distribution outputs are located in `client/build/distributions/`.
 
 ## Development
+
+### Hot-Reload
+
+Edit shaders or textures while the client is running - changes auto-reload:
+- **Shaders**: Edit `.vert` or `.frag` files in `client/src/main/resources/shaders/`
+- **Textures**: Edit `.png` files in `client/src/main/resources/textures/`
+
+Debounce time: 150ms (configurable in `client.yml`)
+
+### Debug Mode
+
+Press **F3** in-game for debug overlay showing:
+- FPS and frame time
+- Position and rotation
+- Chunk coordinates
+- Memory usage
+- OpenGL info
+
+### Logging
+
+Logs are written to `logs/` directory:
+- `latest.log` - Current session
+- `YYYY-MM-DD-N.log.gz` - Archived logs
+
+Configure log level in `config/client.yml` or `config/server.yml`:
+```yaml
+logging:
+  level: DEBUG  # TRACE, DEBUG, INFO, WARN, ERROR
+```
 
 ### IDE Setup
 

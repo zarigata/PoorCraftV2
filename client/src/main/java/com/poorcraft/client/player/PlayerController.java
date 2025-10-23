@@ -29,9 +29,7 @@ public class PlayerController {
     private final Configuration config;
     private final ClientNetworkManager networkManager;
 
-    private final Vector3f moveDir = new Vector3f();
-    private float mouseSensitivity;
-    private long lastMovementSendTime;
+    private boolean enabled = true;
 
     public PlayerController(Entity player, Camera camera, InputManager input, Configuration config, ClientNetworkManager networkManager) {
         this.player = player;
@@ -43,6 +41,10 @@ public class PlayerController {
     }
 
     public void update(float dt) {
+        if (!enabled) {
+            return;
+        }
+
         PositionComponent position = player.getPosition();
         VelocityComponent velocity = player.getVelocity();
         PhysicsComponent physics = player.getComponent(PhysicsComponent.class);
@@ -155,5 +157,13 @@ public class PlayerController {
             position.isOnGround()
         );
         networkManager.sendPacket(packet);
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
 }

@@ -1,4 +1,7 @@
 dependencies {
+    // Module dependencies (compile-only to avoid circular dependency)
+    compileOnly project(':modapi')
+    
     // Logging
     implementation "org.slf4j:slf4j-api:${slf4jVersion}"
     
@@ -13,6 +16,12 @@ dependencies {
 
     // Lua scripting
     implementation "org.luaj:luaj-jse:${luajVersion}"
+    
+    // Networking
+    implementation "io.netty:netty-all:${nettyVersion}"
+    
+    // Math library
+    implementation "org.joml:joml:${jomlVersion}"
 }
 
 jar {

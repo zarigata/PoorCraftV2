@@ -15,6 +15,23 @@ import com.poorcraft.common.inventory.ItemStack;
 import com.poorcraft.common.world.block.BlockType;
 import com.poorcraft.common.world.chunk.Chunk;
 import com.poorcraft.common.world.chunk.ChunkCodec;
+import com.poorcraft.core.Updatable;
+import com.poorcraft.core.Renderable;
+import com.poorcraft.common.config.Configuration;
+import com.poorcraft.client.render.camera.Camera;
+import com.poorcraft.client.resource.ShaderManager;
+import com.poorcraft.client.resource.TextureManager;
+import com.poorcraft.client.input.InputManager;
+import com.poorcraft.client.render.texture.TextureAtlas;
+import com.poorcraft.client.render.shader.ShaderProgram;
+import com.poorcraft.common.entity.EntityManager;
+import com.poorcraft.client.entity.EntityRenderer;
+import com.poorcraft.client.render.BlockSelectionRenderer;
+import com.poorcraft.client.player.PlayerController;
+import com.poorcraft.client.player.BlockInteractionHandler;
+import com.poorcraft.common.entity.Entity;
+import org.joml.Vector3f;
+import org.slf4j.Logger;
 
 import java.awt.HeadlessException;
 import java.io.IOException;
@@ -412,9 +429,59 @@ public class World implements Updatable, Renderable, com.poorcraft.common.world.
         return entity;
     }
 
+    public void setPlayerControlsEnabled(boolean enabled) {
+        if (playerController != null) {
+            playerController.setEnabled(enabled);
+        }
+        if (blockInteractionHandler != null) {
+            blockInteractionHandler.setEnabled(enabled);
+        }
+    }
+
+    public PlayerController getPlayerController() {
+        return playerController;
+    }
+
+    public BlockInteractionHandler getBlockInteractionHandler() {
+        return blockInteractionHandler;
+    }
+
     public Entity spawnNPC(String name, Vector3f position, String behavior) {
         Entity entity = entityManager.createNPC(name, new Vector3f(position), behavior);
         entity.setWorld(this);
         return entity;
+    }
+
+    /**
+     * Cleanup all world resources.
+     */
+    public void cleanup() {
+        LOGGER.info("Cleaning up world resources...");
+        
+        if (chunkLoader != null) {
+            chunkLoader.shutdown();
+        }
+        
+        if (chunkRenderer != null) {
+            chunkRenderer.cleanup();
+        }
+        
+        if (entityRenderer != null) {
+            entityRenderer.cleanup();
+        }
+        
+        if (blockSelectionRenderer != null) {
+            blockSelectionRenderer.cleanup();
+        }
+        
+        if (worldShader != null) {
+            worldShader.close();
+        }
+        
+        if (blockAtlas != null) {
+            blockAtlas.cleanup();
+        }
+        
+        LOGGER.info("World cleanup complete");
     }
 }

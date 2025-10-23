@@ -1,15 +1,30 @@
 package com.poorcraft.client;
 
+import com.poorcraft.client.ui.UIManager;
+import com.poorcraft.client.ui.UIRenderer;
+import com.poorcraft.client.ui.UIState;
+import com.poorcraft.client.window.Window;
+import com.poorcraft.client.input.InputManager;
+import com.poorcraft.client.render.camera.Camera;
+import com.poorcraft.client.render.Renderer;
+import com.poorcraft.client.render.GLInfo;
+import com.poorcraft.client.resource.ShaderManager;
+import com.poorcraft.client.resource.TextureManager;
+import com.poorcraft.client.resource.FileWatcher;
+import com.poorcraft.client.world.World;
 import com.poorcraft.client.mod.ClientModManager;
 import com.poorcraft.client.network.ClientNetworkManager;
-import com.poorcraft.client.network.handler.ModDataHandler;
-import com.poorcraft.client.network.handler.ModListHandler;
-import com.poorcraft.client.ui.ConnectionUI;
-import com.poorcraft.client.ui.ServerBrowserUI;
+import com.poorcraft.common.entity.Entity;
+import com.poorcraft.common.entity.component.InventoryComponent;
+import com.poorcraft.common.config.Configuration;
+import com.poorcraft.common.Constants;
 import com.poorcraft.common.event.EventBus;
 import com.poorcraft.common.registry.RegistryManager;
 import com.poorcraft.common.registry.Registries;
 import com.poorcraft.api.ModAPI;
+import com.poorcraft.core.Engine;
+import org.joml.Vector3f;
+import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -19,8 +34,11 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_DISABLED;
+import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_NORMAL;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_1;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_E;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_T;
 
 /**
  * Main entry point for the PoorCraft client application.
@@ -39,11 +57,14 @@ public class Main {
     private static ClientModManager modManager;
     private static FileWatcher shaderWatcher;
     private static FileWatcher textureWatcher;
-    private static Engine engine;
-    private static Renderer renderer;
-    private static World world;
+    private static UIRenderer uiRenderer;
+    private static UIManager uiManager;
     private static Entity playerEntity;
     private static ClientNetworkManager networkManager;
+    private static World world;
+    private static Renderer renderer;
+    private static Engine engine;
+    private static Camera camera;
     private static final AtomicBoolean cleanupExecuted = new AtomicBoolean(false);
     
     public static void main(String[] args) {
@@ -83,41 +104,14 @@ public class Main {
             // Check for multiplayer argument
             boolean multiplayer = args.length > 0 && "--multiplayer".equals(args[0]);
 
+            // Initialize network manager if multiplayer
             if (multiplayer) {
-                // Multiplayer mode - create network manager first
                 networkManager = new ClientNetworkManager(config);
                 networkManager.init();
-                modManager = new ClientModManager(config, eventBus, registryManager, networkManager);
-                networkManager.registerHandler(
-                    com.poorcraft.common.network.packet.ModListPacket.class,
-                    new ModListHandler(modManager, networkManager));
-                networkManager.registerHandler(
-                    com.poorcraft.common.network.packet.ModDataPacket.class,
-                    new ModDataHandler(modManager));
-
-                // Show server browser UI (placeholder implementation)
-                LOGGER.info("Starting in multiplayer mode");
-                ServerBrowserUI serverBrowser = new ServerBrowserUI(config, networkManager);
-                String selectedServer = serverBrowser.showAndGetSelection();
-                
-                if (selectedServer != null) {
-                    // Connect to selected server
-                    ConnectionUI connectionUI = new ConnectionUI(networkManager);
-                    if (connectionUI.connect(selectedServer)) {
-                        LOGGER.info("Connected to server successfully");
-                    } else {
-                        LOGGER.error("Failed to connect to server");
-                        System.exit(1);
-                    }
-                } else {
-                    LOGGER.info("No server selected, exiting");
-                    System.exit(0);
-                }
-            } else {
-                modManager = new ClientModManager(config, eventBus, registryManager, null);
-                modManager.init();
-                registryManager.freezeAll();
             }
+
+            // Create window before input/world setup
+            window = new Window(config);
 
             // Detect and log OpenGL capabilities
             GLInfo capabilities = new GLInfo();
@@ -131,7 +125,7 @@ public class Main {
             }
             
             // Create camera
-            Camera camera = new Camera();
+            camera = new Camera();
             camera.setPosition(0.0f, 80.0f, 0.0f);
             camera.setPerspective(
                 config.getFloat("game.fov", Constants.Rendering.DEFAULT_FOV),
@@ -158,6 +152,10 @@ public class Main {
             shaderManager = new ShaderManager(config);
             textureManager = new TextureManager(config, capabilities);
             
+            // Create renderer
+            renderer = new Renderer(camera, shaderManager, textureManager, window);
+            renderer.init();
+            
             // Setup file watchers for hot-reload
             if (config.getBoolean("resources.hotReload", true)) {
                 setupFileWatchers(config);
@@ -178,71 +176,76 @@ public class Main {
                 LOGGER.warn("Failed to load test texture, using fallback", e);
             }
             
-            // Create world
-            world = new World(config.getLong("world.seed", 0L), config, camera, shaderManager, textureManager, inputManager, networkManager);
-            playerEntity = world.spawnPlayer("TestPlayer", new Vector3f(0, 80, 5));
-            world.spawnNPC("TestNPC", new Vector3f(5, 80, 5), "idle");
-            
-            // Create renderer
-            renderer = new Renderer(camera, shaderManager, textureManager, window);
-            renderer.init();
+            // Create UI renderer
+            uiRenderer = new UIRenderer(window, shaderManager, textureManager, config);
+            uiRenderer.init();
+
+            // Create UI manager
+            uiManager = new UIManager(window, inputManager, networkManager, textureManager, config);
+            uiManager.init();
+            uiRenderer.setRenderCallback(uiManager::render);
+
+            // Listen for UI state transitions to toggle controls/cursor
+            uiManager.addStateListener((previous, current) -> {
+                boolean inGame = current == UIState.IN_GAME;
+                
+                // Create world when transitioning to IN_GAME for the first time
+                if (inGame && world == null) {
+                    long seed = System.currentTimeMillis();
+                    world = new World(seed, config, camera, shaderManager, textureManager, inputManager, networkManager);
+                    engine.registerUpdatable(world);
+                    engine.registerRenderable(world);
+                    
+                    // Spawn player entity
+                    playerEntity = world.spawnPlayer(new Vector3f(0.0f, 80.0f, 0.0f));
+                    uiManager.setPlayerEntity(playerEntity);
+                    LOGGER.info("World created with seed: {}", seed);
+                }
+                
+                if (world != null) {
+                    world.setPlayerControlsEnabled(inGame);
+                }
+                int cursorMode = inGame ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
+                window.setCursorMode(cursorMode);
+            });
+
+            uiManager.setState(UIState.MAIN_MENU);
             
             // Add window resize listener
-            window.addResizeListener((width, height) -> renderer.resize(width, height));
+            window.addResizeListener((width, height) -> {
+                renderer.resize(width, height);
+                uiRenderer.resize(width, height);
+                uiManager.resize(width, height);
+            });
             
             // Initialize engine
             engine = new Engine();
             engine.init();
             
-            // Register world with engine
-            engine.registerUpdatable(world);
-            engine.registerRenderable(world);
-            
-            // Register renderer with engine (for UI/HUD in future)
-            // engine.registerRenderable(renderer);
+            // Register renderer and UI with engine
+            engine.registerRenderable(renderer);
+            engine.registerUpdatable(uiManager);
+            engine.registerRenderable(uiRenderer);
             
             // Set up event polling callback
             engine.setPollEventsCallback(() -> {
                 // Clear edge states before polling new events
                 inputManager.newFrame();
-                
+
                 // Poll events (triggers callbacks that set edge states)
                 window.pollEvents();
-                
-                // Check for escape key to close
-                if (inputManager.keyPressed(GLFW_KEY_ESCAPE)) {
-                    engine.stop();
+
+                // Handle UI input first - if UI consumes input, don't process game input
+                boolean uiConsumedInput = uiManager.handleInput(inputManager);
+
+                if (!uiConsumedInput) {
+                    // Process game input only if UI didn't consume it
+                    handleGameInput();
                 }
-                
+
                 // Check if window should close
                 if (window.shouldClose()) {
                     engine.stop();
-                }
-
-                if (playerEntity != null) {
-                    InventoryComponent inventory = playerEntity.getComponent(InventoryComponent.class);
-                    if (inventory != null) {
-                        int hotbarSize = Constants.Inventory.HOTBAR_SIZE;
-                        int currentSlot = inventory.getInventory().getSelectedSlot();
-
-                        double scrollY = inputManager.getScrollY();
-                        if (scrollY != 0.0d) {
-                            int steps = (int) Math.round(scrollY);
-                            if (steps != 0) {
-                                int newSlot = Math.floorMod(currentSlot - steps, hotbarSize);
-                                inventory.selectHotbarSlot(newSlot);
-                                currentSlot = newSlot;
-                            }
-                        }
-
-                        for (int i = 0; i < Math.min(hotbarSize, 9); i++) {
-                            int keyCode = GLFW_KEY_1 + i;
-                            if (inputManager.keyPressed(keyCode)) {
-                                inventory.selectHotbarSlot(i);
-                                break;
-                            }
-                        }
-                    }
                 }
             });
             
@@ -262,6 +265,86 @@ public class Main {
             LOGGER.error("Fatal error in client", e);
             cleanup();
             System.exit(1);
+        }
+    }
+
+    /**
+     * Handles game-specific input when UI doesn't consume it.
+     */
+    private static void handleGameInput() {
+        UIState currentState = uiManager.getCurrentState();
+
+        // Handle state-specific input
+        switch (currentState) {
+            case IN_GAME:
+                handleInGameInput();
+                break;
+            case PAUSED:
+                handlePausedInput();
+                break;
+            case INVENTORY:
+                handleInventoryInput();
+                break;
+            default:
+                // Other states handled by UI system
+                break;
+        }
+    }
+
+    private static void handleInGameInput() {
+        // Handle in-game input (hotbar, inventory toggle, etc.)
+        if (playerEntity != null) {
+            InventoryComponent inventory = playerEntity.getComponent(InventoryComponent.class);
+            if (inventory != null) {
+                handleHotbarInput(inventory);
+            }
+        }
+
+        // Handle UI state transitions
+        if (inputManager.keyPressed(GLFW_KEY_ESCAPE)) {
+            uiManager.setState(UIState.PAUSED);
+        }
+        if (inputManager.keyPressed(GLFW_KEY_E)) {
+            uiManager.setState(UIState.INVENTORY);
+        }
+        if (inputManager.keyPressed(GLFW_KEY_T)) {
+            uiManager.setState(UIState.CHAT);
+        }
+    }
+
+    private static void handlePausedInput() {
+        // Handle pause menu input
+        if (inputManager.keyPressed(GLFW_KEY_ESCAPE)) {
+            uiManager.setState(UIState.IN_GAME);
+        }
+    }
+
+    private static void handleInventoryInput() {
+        // Handle inventory input
+        if (inputManager.keyPressed(GLFW_KEY_ESCAPE) || inputManager.keyPressed(GLFW_KEY_E)) {
+            uiManager.setState(UIState.IN_GAME);
+        }
+    }
+
+    private static void handleHotbarInput(InventoryComponent inventory) {
+        int hotbarSize = Constants.Inventory.HOTBAR_SIZE;
+        int currentSlot = inventory.getInventory().getSelectedSlot();
+
+        double scrollY = inputManager.getScrollY();
+        if (scrollY != 0.0d) {
+            int steps = (int) Math.round(scrollY);
+            if (steps != 0) {
+                int newSlot = Math.floorMod(currentSlot - steps, hotbarSize);
+                inventory.selectHotbarSlot(newSlot);
+            }
+        }
+
+        for (int i = 0; i < Math.min(hotbarSize, 9); i++) {
+            int keyCode = GLFW_KEY_1 + i;
+            if (inputManager.keyPressed(keyCode)) {
+                inventory.selectHotbarSlot(i);
+                break;
+            }
         }
     }
     
@@ -328,8 +411,11 @@ public class Main {
         if (!cleanupExecuted.compareAndSet(false, true)) {
             return;
         }
-        if (networkManager != null) {
-            networkManager.disconnect();
+        if (uiManager != null) {
+            uiManager.cleanup();
+        }
+        if (uiRenderer != null) {
+            uiRenderer.cleanup();
         }
         if (world != null) {
             world.cleanup();

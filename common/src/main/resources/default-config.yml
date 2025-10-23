@@ -92,6 +92,18 @@ entity:
   defaultPlayerSkin: "skins/player_default.png"
   defaultNPCSkin: "skins/npc_villager.png"
 
+ui:
+  scale: 1.0
+  font: "fonts/default.ttf"
+  fontSize: 16
+  chatEnabled: true
+  chatOpacity: 0.5
+  showDebugInfo: false
+  showFPS: true
+  showCoordinates: true
+  hudOpacity: 1.0
+  crosshairType: "default"
+
 physics:
   gravity: -32.0
   jumpVelocity: 10.0

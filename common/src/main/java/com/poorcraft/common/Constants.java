@@ -184,7 +184,27 @@ public final class Constants {
         
         private Rendering() {}
     }
-    
+
+    public static final class UI {
+        public static final int DEFAULT_FONT_SIZE = 16;
+        public static final int LARGE_FONT_SIZE = 24;
+        public static final int SMALL_FONT_SIZE = 12;
+        public static final int HOTBAR_SLOT_SIZE = 40;
+        public static final int INVENTORY_SLOT_SIZE = 36;
+        public static final int CHAT_MAX_MESSAGES = 100;
+        public static final float CHAT_FADE_TIME = 5.0f;
+        public static final int CROSSHAIR_SIZE = 16;
+        public static final int HEALTH_BAR_WIDTH = 81;
+        public static final int HEALTH_BAR_HEIGHT = 9;
+        public static final int HUNGER_BAR_WIDTH = 81;
+        public static final int HUNGER_BAR_HEIGHT = 9;
+        public static final float UI_SCALE_MIN = 0.5f;
+        public static final float UI_SCALE_MAX = 4.0f;
+        public static final float UI_SCALE_DEFAULT = 1.0f;
+
+        private UI() {}
+    }
+
     /**
      * Input-related constants.
      */

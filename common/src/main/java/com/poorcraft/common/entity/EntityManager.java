@@ -5,6 +5,7 @@ import com.poorcraft.common.entity.behavior.BehaviorStateMachine;
 import com.poorcraft.common.entity.behavior.IdleBehavior;
 import com.poorcraft.common.entity.component.AnimationComponent;
 import com.poorcraft.common.entity.component.BehaviorComponent;
+import com.poorcraft.common.entity.component.HealthComponent;
 import com.poorcraft.common.entity.component.InteractionComponent;
 import com.poorcraft.common.entity.component.InventoryComponent;
 import com.poorcraft.common.entity.component.NameComponent;
@@ -158,6 +159,10 @@ public class EntityManager {
                 });
                 machine.update(dt);
             }
+            HealthComponent health = entity.getComponent(HealthComponent.class);
+            if (health != null) {
+                health.update((float) dt);
+            }
         }
     }
 
@@ -191,6 +196,7 @@ public class EntityManager {
         entity.addComponent(new AnimationComponent());
         entity.addComponent(new InteractionComponent());
         entity.addComponent(new InventoryComponent());
+        entity.addComponent(new HealthComponent());
         addEntity(entity);
         return entity;
     }
